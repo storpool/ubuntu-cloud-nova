@@ -18,6 +18,7 @@ Build-Depends:
  python3-setuptools (>= 16.0),
  python3-sphinx (>= 2.0.0),
  python3-sphinx-feature-classification (>= 1.0.1),
+ systemd <!nocheck>
 Build-Depends-Indep:
  bandit,
  crudini,
