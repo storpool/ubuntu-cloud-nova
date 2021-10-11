@@ -1,3 +1,9 @@
+nova (3:24.0.0-0ubuntu1~cloud0+0~0~0.sp1) UNRELEASED; urgency=medium
+
+  * Non-maintainer upload for patch tracking only.
+
+ -- Peter Penchev <openstack-dev@storpool.com>  Mon, 11 Oct 2021 11:28:04 +0300
+
 nova (3:24.0.0-0ubuntu1~cloud0) focal-xena; urgency=medium
 
   * New upstream release for the Ubuntu Cloud Archive.
