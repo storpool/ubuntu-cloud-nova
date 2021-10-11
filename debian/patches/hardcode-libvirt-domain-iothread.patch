@@ -1,0 +1,228 @@
+Description: Hardcode iothread use in the KVM libvirt domain.
+ Add the "iothreads" top-level element with the "1" as text.
+ .
+ Add <driver iothread="1"> to "vd*" block devices.
+ .
+ Add <driver iothread="1"> to "virtio-scsi" controllers.
+ .
+ Change-Id: I8f4124c98a4ed81d0048f62d762091afc73a5452
+Author: Peter Penchev <openstack-dev@storpool.com>
+Last-Update: 2021-10-11
+
+--- a/nova/tests/fixtures/libvirt_data.py
++++ b/nova/tests/fixtures/libvirt_data.py
+@@ -215,8 +215,10 @@
+       <quota>50000</quota>
+       <period>25000</period>
+     </cputune>
++    <iothreads>1</iothreads>
+     <devices>
+       <disk type="file" device="disk">
++        <driver io="native" iothread="1" />
+         <source file="/tmp/disk-img"/>
+         <target bus="virtio" dev="vda"/>
+       </disk>
+@@ -245,6 +247,7 @@
+           <backend model='random'>/dev/urandom</backend>
+       </rng>
+       <controller type='scsi' index='0' model='virtio-scsi'>
++        <driver iothread='1' />
+       </controller>
+     </devices>
+     <launchSecurity type="sev">
+--- a/nova/tests/unit/virt/libvirt/test_config.py
++++ b/nova/tests/unit/virt/libvirt/test_config.py
+@@ -2487,6 +2487,7 @@
+                 <type machine="pc-q35-5.1">hvm</type>
+                 <loader secure='yes' readonly='yes' type='pflash'>/tmp/OVMF_CODE.secboot.fd</loader>
+               </os>
++              <iothreads>1</iothreads>
+             </domain>""",  # noqa: E501
+             xml,
+         )
+@@ -2519,6 +2520,7 @@
+                 <type machine="pc-q35-5.1">hvm</type>
+                 <loader secure="no"/>
+               </os>
++              <iothreads>1</iothreads>
+             </domain>""",
+         )
+ 
+@@ -2537,6 +2539,7 @@
+                 <type machine="pc-q35-5.1">hvm</type>
+                 <loader secure="yes"/>
+               </os>
++              <iothreads>1</iothreads>
+             </domain>""",
+         )
+ 
+@@ -2561,6 +2564,7 @@
+                 <type>hvm</type>
+                 <bootmenu enable="yes"/>
+               </os>
++              <iothreads>1</iothreads>
+             </domain>""")
+ 
+     def test_config_perf(self):
+@@ -2583,6 +2587,7 @@
+               <os>
+                 <type>hvm</type>
+               </os>
++              <iothreads>1</iothreads>
+               <perf>
+                 <event enabled="yes" name="cmt"/>
+                 <event enabled="yes" name="mbml"/>
+@@ -2609,6 +2614,7 @@
+               <os>
+                 <type machine="fake_machine_type">hvm</type>
+               </os>
++              <iothreads>1</iothreads>
+             </domain>""")
+ 
+     def test_ConfigGuest_parse_devices(self):
+@@ -3402,7 +3408,7 @@
+         xml = obj.to_xml()
+         self.assertXmlEqual(xml, """
+             <controller type='scsi' index='0' model='virtio-scsi'>
+-              <driver iommu="on" />
++              <driver iommu="on" iothread="1" />
+             </controller>""")
+ 
+     def test_config_guest_usb_host_controller(self):
+--- a/nova/tests/unit/virt/libvirt/test_driver.py
++++ b/nova/tests/unit/virt/libvirt/test_driver.py
+@@ -763,7 +763,8 @@
+         <domain type='kvm'>
+           <devices>
+             <disk type='block' device='disk'>
+-              <driver name='qemu' type='raw' cache='none'/>
++              <driver name='qemu' type='raw' cache='none' io='native'
++              iothread='1'/>
+               <source dev='{device_path}'/>
+               <target bus='virtio' dev='vdb'/>
+               <serial>58a84f6d-3f0c-4e19-a0af-eb657b790657</serial>
+@@ -9336,6 +9337,7 @@
+         mock_xml_with_disk = """<domain>
+   <devices>
+     <disk type='file'>
++      <driver iothread='1' io='native' />
+       <source file='/path/to/fake-volume'/>
+       <target dev='vdc' bus='virtio'/>
+     </disk>
+@@ -9373,6 +9375,7 @@
+ 
+                 mock_get_domain.assert_called_with(instance)
+                 xml = """<disk type="file" device="disk">
++                            <driver io="native" iothread="1"/>
+                             <source file="/path/to/fake-volume"/>
+                             <target bus="virtio" dev="vdc"/>
+                         </disk>"""
+@@ -28354,6 +28357,7 @@
+               <os>
+                 <type>hvm</type>
+               </os>
++              <iothreads>1</iothreads>
+               <devices>
+                 <memory model="nvdimm" access="shared">
+                   <source>
+--- a/nova/tests/unit/virt/libvirt/test_guest.py
++++ b/nova/tests/unit/virt/libvirt/test_guest.py
+@@ -637,12 +637,14 @@
+               """
+ 
+         diska_xml = """<disk type="file" device="disk">
++  <driver iothread="1" io="native"/>
+   <source file="disk1_file"/>
+   <target bus="virtio" dev="vda"/>
+   <serial>0e38683e-f0af-418f-a3f1-6b67ea0f919d</serial>
+ </disk>"""
+ 
+         diskb_xml = """<disk type="block" device="disk">
++  <driver iothread="1" io="native"/>
+   <source dev="/path/to/dev/1"/>
+   <target bus="virtio" dev="vdb"/>
+ </disk>"""
+@@ -681,6 +683,7 @@
+               """
+ 
+         diska_xml = """<disk type="file" device="disk">
++  <driver iothread="1" io="native"/>
+   <source file="disk1_file"/>
+   <target bus="virtio" dev="vda"/>
+   <serial>0e38683e-f0af-418f-a3f1-6b67ea0f919d</serial>
+--- a/nova/tests/unit/virt/libvirt/test_migration.py
++++ b/nova/tests/unit/virt/libvirt/test_migration.py
+@@ -335,7 +335,7 @@
+         xml = """<domain>
+  <devices>
+    <disk type='block' device='disk'>
+-     <driver name='qemu' type='raw' cache='none'/>
++     <driver name='qemu' type='raw' cache='none' io='native' iothread='1'/>
+      <source dev='/dev/disk/by-path/ip-1.2.3.4:3260-iqn.abc.12345.opst-lun-X'/>
+      <target bus='virtio' dev='vdb'/>
+      <serial>58a84f6d-3f0c-4e19-a0af-eb657b790657</serial>
+--- a/nova/virt/libvirt/config.py
++++ b/nova/virt/libvirt/config.py
+@@ -1163,7 +1163,8 @@
+         dev.set("type", self.source_type)
+         dev.set("device", self.source_device)
+         if any((self.driver_name, self.driver_format, self.driver_cache,
+-                self.driver_discard, self.driver_iommu)):
++                self.driver_discard, self.driver_iommu,
++                self.target_dev.startswith("vd"))):
+             drv = etree.Element("driver")
+             if self.driver_name is not None:
+                 drv.set("name", self.driver_name)
+@@ -1177,6 +1178,10 @@
+                 drv.set("io", self.driver_io)
+             if self.driver_iommu:
+                 drv.set("iommu", "on")
++            if self.target_dev.startswith("vd"):
++                drv.set("iothread", "1")
++                # Override for testing purposes
++                drv.set("io", "native")
+             dev.append(drv)
+ 
+         if self.source_type == "file":
+@@ -2134,8 +2139,15 @@
+         if self.model:
+             controller.set("model", str(self.model))
+ 
+-        if self.driver_iommu:
+-            controller.append(etree.Element("driver", iommu="on"))
++        if self.driver_iommu or self.model == "virtio-scsi":
++            driver = etree.Element("driver")
++
++            if self.driver_iommu:
++                driver.set("iommu", "on")
++            if self.model == "virtio-scsi":
++                driver.set("iothread", "1")
++
++            controller.append(driver)
+ 
+         return controller
+ 
+@@ -2910,6 +2922,14 @@
+                 features.append(feat.format_dom())
+             root.append(features)
+ 
++    def _format_iothreads(self, root):
++        if self.virt_type != "kvm":
++            return
++
++        iothreads = etree.Element("iothreads")
++        iothreads.text = "1"
++        root.append(iothreads)
++
+     def _format_devices(self, root):
+         if len(self.devices) == 0:
+             return
+@@ -2961,6 +2981,8 @@
+         if self.cpu is not None:
+             root.append(self.cpu.format_dom())
+ 
++        self._format_iothreads(root)
++
+         self._format_devices(root)
+ 
+         self._format_idmaps(root)
