@@ -1,6 +1,10 @@
 nova (3:24.0.0-0ubuntu1~cloud0+0~0~0.sp1) UNRELEASED; urgency=medium
 
   * Non-maintainer upload for patch tracking only.
+  * Add a build requirement on systemd so that the test suite may pass in
+    a minimal chroot environment.
+  * Add the StorPool hardcode-libvirt-domain-iothread patch to force
+    libvirt/KVM to use iothreads for the disk devices in the Nova instances.
 
  -- Peter Penchev <openstack-dev@storpool.com>  Mon, 11 Oct 2021 11:28:04 +0300
 
