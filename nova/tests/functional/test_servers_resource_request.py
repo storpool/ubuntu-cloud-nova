@@ -146,12 +146,13 @@ class ExtendedResourceRequestNeutronFixture(ResourceRequestNeutronFixture):
             # port_resource_request_groups.py
             {
                 "updated": "2021-08-02T10:00:00-00:00",
-                "name": constants.RESOURCE_REQUEST_GROUPS_EXTENSION,
+                "name": "Port Resource Request Groups",
                 "links": [],
                 "alias": "port-resource-request-groups",
-                "description":
+                "description": (
                     "Support requesting multiple groups of resources and "
                     "traits from the same RP subtree in resource_request"
+                ),
             }
         )
         return extensions
@@ -813,6 +814,7 @@ class NonAdminUnsupportedPortResourceRequestBasedSchedulingTest(
             'os_compute_api:servers:show': '@',
             'os_compute_api:os-attach-interfaces': '@',
             'os_compute_api:os-attach-interfaces:create': '@',
+            'os_compute_api:os-attach-interfaces:show': '@',
             'os_compute_api:os-shelve:shelve': '@',
             'os_compute_api:os-shelve:unshelve': '@',
             'os_compute_api:os-migrate-server:migrate_live': '@',
@@ -1497,6 +1499,32 @@ class PortResourceRequestBasedSchedulingTest(
             port_binding['pci_slot'])
 
 
+class NonAdminPortResourceRequestTests(
+    PortResourceRequestBasedSchedulingTest
+):
+    def setUp(self):
+        super().setUp()
+        # switch to non admin api
+        self.api = self.api_fixture.api
+        self.api.microversion = self.microversion
+
+        # allow non-admin to call the operations
+        self.policy.set_rules({
+            'os_compute_api:servers:create': '@',
+            'os_compute_api:servers:delete': '@',
+            'os_compute_api:servers:create:attach_network': '@',
+            'os_compute_api:servers:show': '@',
+            'os_compute_api:os-attach-interfaces': '@',
+            'os_compute_api:os-attach-interfaces:create': '@',
+            'os_compute_api:os-attach-interfaces:delete': '@',
+            'os_compute_api:os-attach-interfaces:show': '@',
+            'os_compute_api:os-server-external-events:create': '@',
+            'os_compute_api:os-hypervisors:list': '@',
+            'os_compute_api:os-migrations:index': '@',
+            'os_compute_api:os-services:list': '@',
+        })
+
+
 class ExtendedPortResourceRequestBasedSchedulingTestBase(
         PortResourceRequestBasedSchedulingTestBase):
     """A base class for tests with neutron extended resource request."""
@@ -1611,10 +1639,37 @@ class MultiGroupResourceRequestBasedSchedulingTest(
     and packet rate resource requests. This also means that the neutron fixture
     simulates the new resource_request format for all ports.
     """
+
     def setUp(self):
         super().setUp()
         self.neutron = self.useFixture(
             MultiGroupResourceRequestNeutronFixture(self))
+
+
+class NonAdminMultiGroupResReqTests(
+    MultiGroupResourceRequestBasedSchedulingTest
+):
+    def setUp(self):
+        super().setUp()
+        # switch to non admin api
+        self.api = self.api_fixture.api
+        self.api.microversion = self.microversion
+
+        # allow non-admin to call the operations
+        self.policy.set_rules({
+            'os_compute_api:servers:create': '@',
+            'os_compute_api:servers:delete': '@',
+            'os_compute_api:servers:create:attach_network': '@',
+            'os_compute_api:servers:show': '@',
+            'os_compute_api:os-attach-interfaces': '@',
+            'os_compute_api:os-attach-interfaces:create': '@',
+            'os_compute_api:os-attach-interfaces:delete': '@',
+            'os_compute_api:os-attach-interfaces:show': '@',
+            'os_compute_api:os-server-external-events:create': '@',
+            'os_compute_api:os-hypervisors:list': '@',
+            'os_compute_api:os-migrations:index': '@',
+            'os_compute_api:os-services:list': '@',
+        })
 
 
 class ServerMoveWithPortResourceRequestTest(
@@ -2548,6 +2603,40 @@ class ServerMoveWithPortResourceRequestTest(
             server, qos_normal_port, qos_sriov_port)
 
 
+class NonAdminServerMoveWithPortResourceRequestTests(
+    ServerMoveWithPortResourceRequestTest
+):
+    def setUp(self):
+        super().setUp()
+        # switch to non admin api
+        self.api = self.api_fixture.api
+        self.api.microversion = self.microversion
+
+        # allow non-admin to call the operations
+        self.policy.set_rules({
+            'os_compute_api:servers:create': '@',
+            'os_compute_api:servers:delete': '@',
+            'os_compute_api:os-services:update': '@',
+            'os_compute_api:servers:create:attach_network': '@',
+            'os_compute_api:servers:show': '@',
+            'os_compute_api:os-extended-server-attributes': '@',
+            'os_compute_api:os-shelve:shelve': '@',
+            'os_compute_api:os-shelve:unshelve': '@',
+            'os_compute_api:os-migrate-server:migrate': '@',
+            'os_compute_api:os-migrate-server:migrate_live': '@',
+            'os_compute_api:servers:resize': '@',
+            'os_compute_api:servers:confirm_resize': '@',
+            'os_compute_api:servers:revert_resize': '@',
+            'os_compute_api:os-evacuate': '@',
+            'os_compute_api:os-hypervisors:list': '@',
+            'os_compute_api:os-migrations:index': '@',
+            'os_compute_api:os-services:list': '@',
+            'compute:servers:create:requested_destination': '@',
+            'os_compute_api:os-instance-actions:show': '@',
+            'os_compute_api:os-instance-actions:list': '@',
+        })
+
+
 class ServerMoveWithMultiGroupResourceRequestBasedSchedulingTest(
     ExtendedPortResourceRequestBasedSchedulingTestBase,
     ServerMoveWithPortResourceRequestTest,
@@ -2562,6 +2651,40 @@ class ServerMoveWithMultiGroupResourceRequestBasedSchedulingTest(
         super().setUp()
         self.neutron = self.useFixture(
             MultiGroupResourceRequestNeutronFixture(self))
+
+
+class NonAdminServerMoveWithMultiGroupResReqTests(
+    ServerMoveWithMultiGroupResourceRequestBasedSchedulingTest
+):
+    def setUp(self):
+        super().setUp()
+        # switch to non admin api
+        self.api = self.api_fixture.api
+        self.api.microversion = self.microversion
+
+        # allow non-admin to call the operations
+        self.policy.set_rules({
+            'os_compute_api:servers:create': '@',
+            'os_compute_api:servers:delete': '@',
+            'os_compute_api:os-services:update': '@',
+            'os_compute_api:servers:create:attach_network': '@',
+            'os_compute_api:servers:show': '@',
+            'os_compute_api:os-extended-server-attributes': '@',
+            'os_compute_api:os-shelve:shelve': '@',
+            'os_compute_api:os-shelve:unshelve': '@',
+            'os_compute_api:os-migrate-server:migrate': '@',
+            'os_compute_api:os-migrate-server:migrate_live': '@',
+            'os_compute_api:servers:resize': '@',
+            'os_compute_api:servers:confirm_resize': '@',
+            'os_compute_api:servers:revert_resize': '@',
+            'os_compute_api:os-evacuate': '@',
+            'os_compute_api:os-hypervisors:list': '@',
+            'os_compute_api:os-migrations:index': '@',
+            'os_compute_api:os-services:list': '@',
+            'compute:servers:create:requested_destination': '@',
+            'os_compute_api:os-instance-actions:show': '@',
+            'os_compute_api:os-instance-actions:list': '@',
+        })
 
 
 class LiveMigrateAbortWithPortResourceRequestTest(
@@ -2851,6 +2974,7 @@ class ExtendedResourceRequestOldCompute(
     hasn't been upgraded to a version that support extended resource request.
     So nova rejects the operations due to the old compute.
     """
+
     def setUp(self):
         super().setUp()
         self.neutron = self.useFixture(
@@ -2955,3 +3079,30 @@ class ExtendedResourceRequestOldCompute(
             'services to Xena (24.0.0) or later.',
             str(ex)
         )
+
+
+class NonAdminExtendedResourceRequestOldCompute(
+    ExtendedResourceRequestOldCompute
+):
+
+    def setUp(self):
+        super().setUp()
+        # switch to non admin api
+        self.api = self.api_fixture.api
+        self.api.microversion = self.microversion
+
+        # allow non-admin to call the operations
+        self.policy.set_rules({
+            'os_compute_api:servers:create': '@',
+            'os_compute_api:servers:show': '@',
+            'os_compute_api:servers:create:attach_network': '@',
+            'os_compute_api:os-attach-interfaces': '@',
+            'os_compute_api:os-attach-interfaces:create': '@',
+            'os_compute_api:os-attach-interfaces:show': '@',
+            'os_compute_api:os-shelve:shelve': '@',
+            'os_compute_api:os-shelve:unshelve': '@',
+            'os_compute_api:os-migrate-server:migrate': '@',
+            'os_compute_api:os-migrate-server:migrate_live': '@',
+            'os_compute_api:servers:resize': '@',
+            'os_compute_api:os-evacuate': '@',
+        })

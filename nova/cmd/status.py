@@ -87,10 +87,15 @@ class UpgradeCommands(upgradecheck.UpgradeCommands):
         # table, or by only counting compute nodes with a service version of at
         # least 15 which was the highest service version when Newton was
         # released.
-        meta = sa.MetaData(bind=main_db_api.get_engine(context=context))
-        compute_nodes = sa.Table('compute_nodes', meta, autoload=True)
-        return sa.select([sqlfunc.count()]).select_from(compute_nodes).where(
-            compute_nodes.c.deleted == 0).scalar()
+        meta = sa.MetaData()
+        engine = main_db_api.get_engine(context=context)
+        compute_nodes = sa.Table('compute_nodes', meta, autoload_with=engine)
+        with engine.connect() as conn:
+            return conn.execute(
+                sa.select(sqlfunc.count()).select_from(compute_nodes).where(
+                    compute_nodes.c.deleted == 0
+                )
+            ).scalars().first()
 
     def _check_cellsv2(self):
         """Checks to see if cells v2 has been setup.
@@ -104,7 +109,7 @@ class UpgradeCommands(upgradecheck.UpgradeCommands):
         for compute nodes if there are no host mappings on a fresh install.
         """
         meta = sa.MetaData()
-        meta.bind = api_db_api.get_engine()
+        engine = api_db_api.get_engine()
 
         cell_mappings = self._get_cell_mappings()
         count = len(cell_mappings)
@@ -123,9 +128,13 @@ class UpgradeCommands(upgradecheck.UpgradeCommands):
                     'retry.')
             return upgradecheck.Result(upgradecheck.Code.FAILURE, msg)
 
-        host_mappings = sa.Table('host_mappings', meta, autoload=True)
-        count = sa.select([sqlfunc.count()]).select_from(host_mappings)\
-            .scalar()
+        host_mappings = sa.Table('host_mappings', meta, autoload_with=engine)
+
+        with engine.connect() as conn:
+            count = conn.execute(
+                sa.select(sqlfunc.count()).select_from(host_mappings)
+            ).scalars().first()
+
         if count == 0:
             # This may be a fresh install in which case there may not be any
             # compute_nodes in the cell database if the nova-compute service
@@ -270,7 +279,7 @@ class UpgradeCommands(upgradecheck.UpgradeCommands):
                 "2. Use a pre-existing sample config file from the Train "
                 "release. 3. Use an empty or non-existent file to take all "
                 "the defaults.")
-        rule = "system_admin_api"
+        rule = "context_is_admin"
         rule_new_default = "role:admin and system_scope:all"
         status = upgradecheck.Result(upgradecheck.Code.SUCCESS)
         # NOTE(gmann): Initialise the policy if it not initialized.

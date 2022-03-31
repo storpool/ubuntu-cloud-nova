@@ -521,6 +521,7 @@ class Flat(Image):
     creating an overlay. By default it creates raw files, but will use qcow2
     when creating a disk from a qcow2 if force_raw_images is not set in config.
     """
+
     def __init__(self, instance=None, disk_name=None, path=None):
         self.disk_name = disk_name
         path = (path or os.path.join(libvirt_utils.get_instance_path(instance),
@@ -567,15 +568,21 @@ class Flat(Image):
         def copy_raw_image(base, target, size):
             libvirt_utils.copy_image(base, target)
             if size:
-                image = imgmodel.LocalFileImage(target,
-                                                self.driver_format)
-                disk.extend(image, size)
+                self.resize_image(size)
 
         generating = 'image_id' not in kwargs
         if generating:
             if not self.exists():
                 # Generating image in place
                 prepare_template(target=self.path, *args, **kwargs)
+
+            # NOTE(plibeau): extend the disk in the case of image is not
+            # accessible anymore by the customer and the base image is
+            # available on source compute during the resize of the
+            # instance.
+            else:
+                if size:
+                    self.resize_image(size)
         else:
             if not os.path.exists(base):
                 prepare_template(target=base, *args, **kwargs)
@@ -623,14 +630,8 @@ class Qcow2(Image):
         filename = self._get_lock_name(base)
 
         @utils.synchronized(filename, external=True, lock_path=self.lock_path)
-        def copy_qcow2_image(base, target, size):
-            # TODO(pbrady): Consider copying the cow image here
-            # with preallocation=metadata set for performance reasons.
-            # This would be keyed on a 'preallocate_images' setting.
-            libvirt_utils.create_cow_image(base, target)
-            if size:
-                image = imgmodel.LocalFileImage(target, imgmodel.FORMAT_QCOW2)
-                disk.extend(image, size)
+        def create_qcow2_image(base, target, size):
+            libvirt_utils.create_cow_image(base, target, size)
 
         # Download the unmodified base image unless we already have a copy.
         if not os.path.exists(base):
@@ -669,7 +670,7 @@ class Qcow2(Image):
 
         if not os.path.exists(self.path):
             with fileutils.remove_path_on_error(self.path):
-                copy_qcow2_image(base, self.path, size)
+                create_qcow2_image(base, self.path, size)
 
     def resize_image(self, size):
         image = imgmodel.LocalFileImage(self.path, imgmodel.FORMAT_QCOW2)

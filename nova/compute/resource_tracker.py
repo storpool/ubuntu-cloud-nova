@@ -328,7 +328,12 @@ class ResourceTracker(object):
             migration_id=migration.id,
             old_numa_topology=instance.numa_topology,
             new_numa_topology=claim.claimed_numa_topology,
-            old_pci_devices=instance.pci_devices,
+            # NOTE(gibi): the _update_usage_from_migration call below appends
+            # the newly claimed pci devices to the instance.pci_devices list
+            # to keep the migration context independent we need to make a copy
+            # that list here. We need a deep copy as we need to duplicate
+            # the instance.pci_devices.objects list
+            old_pci_devices=copy.deepcopy(instance.pci_devices),
             new_pci_devices=claimed_pci_devices,
             old_pci_requests=instance.pci_requests,
             new_pci_requests=new_pci_requests,
@@ -932,13 +937,40 @@ class ResourceTracker(object):
                             'flavor', 'migration_context',
                             'resources'])
 
-        # Now calculate usage based on instance utilization:
-        instance_by_uuid = self._update_usage_from_instances(
-            context, instances, nodename)
-
         # Grab all in-progress migrations and error migrations:
         migrations = objects.MigrationList.get_in_progress_and_error(
             context, self.host, nodename)
+
+        # Check for tracked instances with in-progress, incoming, but not
+        # finished migrations. For those instance the migration context
+        # is not applied yet (it will be during finish_resize when the
+        # migration goes to finished state). We need to manually and
+        # temporary apply the migration context here when the resource usage is
+        # updated. See bug 1953359 for more details.
+        instance_by_uuid = {instance.uuid: instance for instance in instances}
+        for migration in migrations:
+            if (
+                migration.instance_uuid in instance_by_uuid and
+                migration.dest_compute == self.host and
+                migration.dest_node == nodename
+            ):
+                # we does not check for the 'post-migrating' migration status
+                # as applying the migration context for an instance already
+                # in finished migration status is a no-op anyhow.
+                instance = instance_by_uuid[migration.instance_uuid]
+                LOG.debug(
+                    'Applying migration context for instance %s as it has an '
+                    'incoming, in-progress migration %s. '
+                    'Migration status is %s',
+                    migration.instance_uuid, migration.uuid, migration.status
+                )
+                # It is OK not to revert the migration context at the end of
+                # the periodic as the instance is not saved during the periodic
+                instance.apply_migration_context()
+
+        # Now calculate usage based on instance utilization:
+        instance_by_uuid = self._update_usage_from_instances(
+            context, instances, nodename)
 
         self._pair_instances_to_migrations(migrations, instance_by_uuid)
         self._update_usage_from_migrations(context, migrations, nodename)
@@ -1099,6 +1131,28 @@ class ResourceTracker(object):
             LOG.error('Unable to find services table record for nova-compute '
                       'host %s', self.host)
 
+    def _should_expose_remote_managed_ports_trait(self,
+                                                  is_supported: bool):
+        """Determine whether COMPUTE_REMOTE_MANAGED_PORTS should be exposed.
+
+        Determines if the COMPUTE_REMOTE_MANAGED_PORTS trait needs to be
+        exposed based on the respective compute driver capability and
+        the presence of remote managed devices on a given host. Whether such
+        devices are present or not depends on the Whitelist configuration
+        (presence of a remote_managed tag association with some PCI devices)
+        and their physical presence (plugged in, enumerated by the OS).
+
+        The aim of having this check is to optimize host lookup by prefiltering
+        hosts that have compute driver support but no hardware. The check
+        does not consider free device count - just the presence of device
+        pools since device availability may change between a prefilter check
+        and a later check in PciPassthroughFilter.
+
+        :param bool is_supported: Is the trait supported by the compute driver
+        """
+        return (is_supported and
+            self.pci_tracker.pci_stats.has_remote_managed_device_pools())
+
     def _get_traits(self, context, nodename, provider_tree):
         """Synchronizes internal and external traits for the node provider.
 
@@ -1122,7 +1176,11 @@ class ResourceTracker(object):
         # traits that are missing, and remove any existing set traits
         # that are not currently supported.
         for trait, supported in self.driver.capabilities_as_traits().items():
-            if supported:
+            add_trait = supported
+            if trait == os_traits.COMPUTE_REMOTE_MANAGED_PORTS:
+                add_trait &= self._should_expose_remote_managed_ports_trait(
+                    supported)
+            if add_trait:
                 traits.add(trait)
             elif trait in traits:
                 traits.remove(trait)

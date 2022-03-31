@@ -1,12 +1,205 @@
 CHANGES
 =======
 
-24.0.0
+25.0.0
 ------
 
+* Revert "Adds regression test for bug LP#1944619"
+* Clean up when queued live migration aborted
+* Add functional tests to reproduce bug #1960412
+* Add the Yoga prelude section
+* reenable greendns in nova
+* Fix migration with remote-managed ports & add FT
+* Follow up for unified limits
+* Enable unified limits in the nova-next job
+* Add grenade-skip-level irrelevant-files config
+* Move file system freeze after end of mirroring
+* mention the cycle highlights in the ptl guide
+* Fix unit test for oslo.context 4.1.0
+* Lightos driver release note
+* Update compute rpc version alias for yoga
+* doc: mark the max microversion for yoga
+* zuul-job for Adds Pick guest CPU architecture based on host arch in libvirt driver support
+* Add volume-rebuild support to cinder module
+* driver/secheduler/docs for Adds Pick guest CPU architecture based on host arch in libvirt driver support
+* object/notification for Adds Pick guest CPU architecture based on host arch in libvirt driver support
+* Complete phase-1 of RBAC community-wide goal
+* Separate flavor extra specs policy for server APIs
+* Modify remaining APIs as per RBAC new guidelines
+* Add reno for unified limits
+* Update quota apis with keystone limits and usage
+* Add legacy limits and usage to placement unified limits
+* Enforce resource limits using oslo.limit
+* Tell oslo.limit how to count nova resources
+* Update quota sets APIs
+* Update limit APIs
+* Update quota\_class APIs for db and api limits
+* Enforce api and db limits
+* Add logic to enforce local api and db limits
+* Make unified limits APIs return reserved of 0
+* Assert quota related API behavior when noop
+* Add stub unified limits driver
+* Move keypair quota error message into exception
+* manage: Add image\_property commands
+* libvirt: Register defaults for undefined hw image properties
+* Update live\_migration\_downtime definition
+* Lightbits LightOS driver
+* Server actions APIs scoped to project scope
+* Make more project level APIs scoped to project only
+* [nova/libvirt] Support for checking and enabling SMM when needed
+* Convert SYSTEM\_ADMIN|READER to Admin and system scope
+* Move rule\_if\_system() method to base test class
+* Test PROJECT\_ADMIN APIs with no legacy rule case
+* neutron: Allow to spawn VMs with port without IP address
+* trivial: Add a white space in an error message
+* VMware: Support volumes backed by VStorageObject
+* Support use\_multipath for NVME driver
+* Document remote-managed port usage considerations
+* Adds regression test for bug LP#1944619
+* doc: Correct version for virtio-net multiqueue
+* docs: Document virtio-net multiqueue
+* Gracefull recovery when attaching volume fails
+* [yoga] Add support for VNIC\_REMOTE\_MANAGED
+* Filter computes without remote-managed ports early
+* Add supports\_remote\_managed\_ports capability
+* Bump os-traits to 2.7.0
+* Introduce remote\_managed tag for PCI devs
+* Join quota exception family trees
+* Fix to implement 'pack' or 'spread' VM's NUMA cells
+* [yoga] Include pf mac and vf num in port updates
+* Raise InstanceNotFound on fkey constraint fail saving info cache
+* Cleanup old resize instances dir before resize
+* Update announce self workaround opt description
+* skip test\_tagged\_attachment in nova-next
+* docs: Follow-ups for cells v2, architecture docs
+* VmWare: Remove unused legacy\_nodename regex
+* Move 'hw:pmu', 'hw\_pmu' parsing to nova.virt.hardware
+* [yoga] Add PCI VPD Capability Handling
+* api: Reject duplicate port IDs in server create
+* Revert "Revert resize: wait for events according to hybrid plug"
+* Add nova-ovs-hybrid-plug job
+* tox: Install extras
+* Move optional build dependencies to 'extras'
+* requirements: Bump minimum testtools to 2.5.0
+* Remove Python 2-specific imports
+* requirements: Remove os-xenapi
+* Add service version check workaround for FFU
+* Nova resize don't extend disk in one specific case
+* Add check job for FIPS
+* Move ReaderWriterLock to the test tree
+* Add fixtures to requirements
+* Remove deprecated opts from VNC conf
+* Update centos 8 py36 functional job nodeset to centos stream 8
+* Add wrapper for oslo.concurrency lockutils.ReaderWriterLock()
+* Test aborting queued live migration
+* libvirt: Add announce-self post live-migration workaround
+* Make the CellDatabases fixture work with fasteners >= 0.15
+* Fill the AcceleratorRequestBindingFailed exception msg info
+* Re-add python 3.6 functional testing
+* functional: Add reproducer for #1907775
+* Fill the exception msg
+* Log which instance event was timed out
+* [rt] Apply migration context for incoming migrations
+* Extend the reproducer for 1953359 and 1952915
+* [doc] propose Review-Priority label for contribs
+* Reproduce bug 1953359
+* Reattach mdevs to guest on resume
+* conf: Allow cinderclient and os\_brick to independently log at DEBUG
+* nova-next: Deploy noVNC from source instead of packages
+* nova-next: Drop NOVA\_USE\_SERVICE\_TOKEN from subnode
+* libvirt: Create qcow2 disks with the correct size without extending
+* block\_device: Ignore VolumeAttachmentNotFound during detach
+* Add regression test for bug #1937084
+* libvirt: Ensure all volume drivers log the instance whenever possible
+* Migrate RequestSpec.numa\_topology to use pcpuset
+* Reproduce bug 1952941
+* Revert project-specific APIs for servers
+* Allow per-context rule in error messages
+* Make API fixture pass roles
+* Deprecate the powervm driver
+* Updating tests with Yoga testing runtime
+* Retry image download if it's corrupted
+* api-ref: Adjust BFV rescue non-support note
+* docs: Update libvirt distro support matrix for Xena
+* Add 'hw:vif\_multiqueue\_enabled' flavor extra spec
+* db: Remove unnecessary warning filters
+* db: Remove use of 'bind' arguments
+* db: Don't use legacy 'Row()' methods
+* db: Don't pass strings to 'Connection.execute'
+* db: Replace 'insert.inline' parameter with 'Insert.inline()' method
+* db: Replace use of legacy select() calling style
+* db: Replace use of 'autoload' parameter
+* db: Replace use of Executable.scalar(), Executable.execute()
+* tests: Enable SQLAlchemy 2.0 deprecation warnings
+* tests: Restore - don't reset - warning filters
+* Add debug log for scheduler weight calculation
+* Close Glance image if downloading failed
+* Log instance event wait times
+* Apply common irrelevant\_files for centos 8 job
+* Add autopep8 to tox and pre-commit
+* Update Interop doc
+* Fix interference in db unit test
+* Use ReplaceEngineFacade fixture
+* [Trival] Fix wrong microversion in TestClass name
+* Refactor Database fixture
+* Remove SESSION\_CONFIGURED global from DB fixture
+* Add a WA flag waiting for vif-plugged event during reboot
+* Enable min pps tempest testing in nova-next
+* Remove broken tempest-full-py3-opensuse15 job
+* db: Remove nova-network models
+* db: Remove models for removed services, features
+* objects: Remove 'bandwidth' fields from notifications
+* db: Remove models that were moved to the API database
+* Ignore plug\_vifs on the ironic driver
+* nova-manage: Always get BDMs using get\_by\_volume\_and\_instance
+* Reno for qos-minimum-guaranteed-packet-rate
+* Revert "Temp disable nova-manage placement heal\_allocation testing"
+* Temp disable nova-manage placement heal\_allocation testing
+* [nova-manage]support extended resource request
+* Fix unit test for oslo.concurrency 4.5
+* Log failed metadata retrievals
+* Check Nova project changes with Tobiko scenario test cases
+* Clean up allocations left by evacuation when deleting service
+* Avoid unbound instance\_uuid var during delete
+* Query ports with admin client to get resource\_request
+* Fix instance's image\_ref lost on failed unshelving
+* ensure samples folder exists for microversion
+* Reproducer unit test for bug 1934094
+* docs: Add new architecture guide
+* docs: Add a new cells v2 document
+* docs: Add notes about IoOpsWeigher, BuildFailureWeigher
+* db: Increase timeout for migration tests
+* objects: Stop querying the main DB for keypairs
+* db: Remove legacy placement models
+* db: Remove unused build\_requests columns
+* db: De-duplicate list of removed table columns
+* db: Enable auto-generation of API DB migrations
+* Prevent leaked eventlets to send notifications
+* Set "cache\_ok=True" in "TypeDecorator" inheriting classes
+* api: enable oslo.reports when using uWSGI
+* Define new functional test tox env for placement gate to run
+* Ensure MAC addresses characters are in the same case
+* zuul: Move live migration jobs back to voting
+* fup: Refactor and simplify Cinder fixture GET volume mock
+* fup: Move \_wait\_for\_volume\_{attach,detach} to os-volume\_attachments
+* compute: Update volume\_id within connection\_info during swap\_volume
+* Update min supported service version for Yoga
+* Add regression test for bug #1943431
+* nova-manage: Ensure mountpoint is passed when updating attachment
+* Reproduce bug 1945310
+* Store old\_flavor already on source host during resize
+* tools: Ignore bot-generated branch creation patches
+* db: Add migration to resolve shadow table discrepancies
+* tests: Silence noise from database tests
+* Reproduce bug 1944759
+* tests: Address some nits with database migration series
+* tests: Walk database migrations in correct order
+* Fix the wrong exception used to retry detach API calls
 * Add missing \_\_init\_\_.py in nova/db/api
-* [stable-only]Update TOX\_CONSTRAINTS\_FILE for stable/xena
-* [stable-only]Update .gitreview for stable/xena
+* Update contributor guide for Yoga
+* Add Python3 yoga unit tests
+* Update master for stable/xena
+* Add section for 'nova-manage placement audit' tool
 
 24.0.0.0rc1
 -----------
@@ -22,6 +215,8 @@ CHANGES
 * Allow 'bochs' as a display device option
 * Update compute rpc version alias for xena
 * Add --sleep option for archive\_deleted\_rows --until-complete
+* neutron: Remove references to dead 'qos-queue' extension
+* neutron: Rework how we check for extensions
 * Avoid excessive sleep in vmware unit test
 * Parse alias from domain hostdev
 * Convert features not supported error to HTTPBadRequest
@@ -40,6 +235,8 @@ CHANGES
 * Support boot with extended resource request
 * Provide and use other RCs for mdevs if needed
 * Provide the mdev class for every PCI device
+* VmWare: Use of id shadows built-in function
+* Vmware: Fix spelling in test
 * docs: admin/networking rename neutron\_tunneled to neutron\_tunnel
 * policy: Deprecate field from 'os-extended-server-attributes' policy
 * nova-manage: Introduce volume show, refresh, get\_connector commands
@@ -102,6 +299,7 @@ CHANGES
 * compute: Ensure updates to bdms during pre\_live\_migration are saved
 * Add a regression test for bug 1939545
 * fake: Ensure need\_legacy\_block\_device\_info returns False
+* Revert "tox: Encode specific Python versions"
 * db: Enable auto-generation of migrations
 * db: Integrate alembic
 * db: Normalize migrations tests
@@ -156,6 +354,7 @@ CHANGES
 * Use neutronclient's port binding APIs
 * Make test\_archive\_task\_logs deterministic
 * Improve prep\_resize reschedule unit test
+* libvirt: Switch the default video model from 'cirrus' to 'virtio'
 * Add func test for nova-manage db archive\_deleted\_rows --before
 * docs: Replace 'nova boot' with 'openstack server create'
 * api: Handle invalid volume UUIDs during spawn
@@ -464,6 +663,7 @@ CHANGES
 * [ironic] correct capabilities for disk images supported
 * zuul: Mark nova-lvm as voting
 * zuul: Increase SWIFT\_LOOPBACK\_DISK\_SIZE within nova-lvm job
+* Correct test error
 * [FUP] this change removes an unused paramater
 * docs: Move the LibvirtDistroSupportMatrix wiki page into our docs
 * Restart glance after updating policy in job

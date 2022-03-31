@@ -12,38 +12,32 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import glob
+import os
 import urllib
-
-import fixtures
-import mock
 
 from alembic.runtime import migration as alembic_migration
 from migrate import exceptions as migrate_exceptions
 from migrate.versioning import api as migrate_api
-
-from oslo_db.sqlalchemy import enginefacade
+import mock
 
 from nova.db.api import api as api_db_api
 from nova.db.main import api as main_db_api
 from nova.db import migration
 from nova import exception
 from nova import test
+from nova.tests import fixtures as nova_fixtures
 
 
 class TestDBURL(test.NoDBTestCase):
+    USES_DB_SELF = True
 
     def test_db_sync_with_special_symbols_in_connection_string(self):
         qargs = 'read_default_group=data with/a+percent_%-and%20symbols!'
         url = f"sqlite:///:memory:?{qargs}"
         self.flags(connection=url, group='database')
-        # since the engine.url is immutable it will never get updated
-        # once its created so reusing the engine instance would break
-        # this test.
-        engine = enginefacade.writer.get_engine()
-        self.useFixture(
-            fixtures.MonkeyPatch(
-                'nova.db.migration._get_engine',
-                mock.Mock(return_value=engine)))
+        self.useFixture(nova_fixtures.Database())
+
         alembic_config = migration._find_alembic_conf()
         with mock.patch.object(
                 migration, '_find_alembic_conf', return_value=alembic_config):
@@ -285,3 +279,35 @@ class TestDatabaseUnderVersionControl(test.NoDBTestCase):
         self.assertFalse(ret)
 
         context.get_current_revision.assert_called_once_with()
+
+
+class ProjectTestCase(test.NoDBTestCase):
+
+    def test_no_migrations_have_downgrade(self):
+        topdir = os.path.normpath(os.path.dirname(__file__) + '/../../../')
+        # Walk both the nova_api and nova (cell) database migrations.
+        includes_downgrade = []
+        for directory in (
+            os.path.join(topdir, 'db', 'main', 'legacy_migrations'),
+            os.path.join(topdir, 'db', 'api', 'legacy_migrations'),
+        ):
+            py_glob = os.path.join(directory, 'versions', '*.py')
+            for path in glob.iglob(py_glob):
+                has_upgrade = False
+                has_downgrade = False
+                with open(path, "r") as f:
+                    for line in f:
+                        if 'def upgrade(' in line:
+                            has_upgrade = True
+                        if 'def downgrade(' in line:
+                            has_downgrade = True
+
+                    if has_upgrade and has_downgrade:
+                        fname = os.path.basename(path)
+                        includes_downgrade.append(fname)
+
+        helpful_msg = (
+            "The following migrations have a downgrade "
+            "which is not supported:"
+            "\n\t%s" % '\n\t'.join(sorted(includes_downgrade)))
+        self.assertFalse(includes_downgrade, helpful_msg)

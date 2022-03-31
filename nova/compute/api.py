@@ -59,6 +59,8 @@ from nova import exception
 from nova import exception_wrapper
 from nova.i18n import _
 from nova.image import glance
+from nova.limit import local as local_limit
+from nova.limit import placement as placement_limits
 from nova.network import constants
 from nova.network import model as network_model
 from nova.network import neutron
@@ -114,6 +116,8 @@ SUPPORT_VNIC_TYPE_ACCELERATOR = 57
 MIN_COMPUTE_BOOT_WITH_EXTENDED_RESOURCE_REQUEST = 58
 MIN_COMPUTE_MOVE_WITH_EXTENDED_RESOURCE_REQUEST = 59
 MIN_COMPUTE_INT_ATTACH_WITH_EXTENDED_RES_REQ = 60
+
+SUPPORT_VNIC_TYPE_REMOTE_MANAGED = 61
 
 # FIXME(danms): Keep a global cache of the cells we find the
 # first time we look. This needs to be refreshed on a timer or
@@ -398,7 +402,7 @@ class API:
     def _check_injected_file_quota(self, context, injected_files):
         """Enforce quota limits on injected files.
 
-        Raises a QuotaError if any limit is exceeded.
+        Raises a OverQuota if any limit is exceeded.
         """
         if not injected_files:
             return
@@ -407,6 +411,10 @@ class API:
         try:
             objects.Quotas.limit_check(context,
                                        injected_files=len(injected_files))
+            local_limit.enforce_api_limit(local_limit.INJECTED_FILES,
+                                          len(injected_files))
+        except exception.OnsetFileLimitExceeded:
+            raise
         except exception.OverQuota:
             raise exception.OnsetFileLimitExceeded()
 
@@ -422,6 +430,16 @@ class API:
             objects.Quotas.limit_check(context,
                                        injected_file_path_bytes=max_path,
                                        injected_file_content_bytes=max_content)
+            # TODO(johngarbutt) we can simplify the except clause when
+            # the above legacy quota check is removed.
+            local_limit.enforce_api_limit(
+                local_limit.INJECTED_FILES_PATH, max_path)
+            local_limit.enforce_api_limit(
+                local_limit.INJECTED_FILES_CONTENT, max_content)
+        except exception.OnsetFilePathLimitExceeded:
+            raise
+        except exception.OnsetFileContentLimitExceeded:
+            raise
         except exception.OverQuota as exc:
             # Favor path limit over content limit for reporting
             # purposes
@@ -442,6 +460,10 @@ class API:
         num_metadata = len(metadata)
         try:
             objects.Quotas.limit_check(context, metadata_items=num_metadata)
+            local_limit.enforce_api_limit(
+                local_limit.SERVER_METADATA_ITEMS, num_metadata)
+        except exception.MetadataLimitExceeded:
+            raise
         except exception.OverQuota as exc:
             quota_metadata = exc.kwargs['quotas']['metadata_items']
             raise exception.MetadataLimitExceeded(allowed=quota_metadata)
@@ -838,37 +860,18 @@ class API:
         """
         image_meta = _get_image_meta_obj(image)
 
-        API._validate_flavor_image_mem_encryption(flavor, image_meta)
-
-        # validate PMU extra spec and image metadata
-        flavor_pmu = flavor.extra_specs.get('hw:pmu')
-        image_pmu = image_meta.properties.get('hw_pmu')
-        if (flavor_pmu is not None and image_pmu is not None and
-                image_pmu != strutils.bool_from_string(flavor_pmu)):
-            raise exception.ImagePMUConflict()
-
         # Only validate values of flavor/image so the return results of
         # following 'get' functions are not used.
+        hardware.get_mem_encryption_constraint(flavor, image_meta)
+        hardware.get_pmu_constraint(flavor, image_meta)
         hardware.get_number_of_serial_ports(flavor, image_meta)
         hardware.get_realtime_cpu_constraint(flavor, image_meta)
         hardware.get_cpu_topology_constraints(flavor, image_meta)
+        hardware.get_vif_multiqueue_constraint(flavor, image_meta)
         if validate_numa:
             hardware.numa_get_constraints(flavor, image_meta)
         if validate_pci:
             pci_request.get_pci_requests_from_flavor(flavor)
-
-    @staticmethod
-    def _validate_flavor_image_mem_encryption(flavor, image):
-        """Validate that the flavor and image don't make contradictory
-        requests regarding memory encryption.
-
-        :param flavor: Flavor object
-        :param image: an ImageMeta object
-        :raises: nova.exception.FlavorImageConflict
-        """
-        # This library function will raise the exception for us if
-        # necessary; if not, we can ignore the result returned.
-        hardware.get_mem_encryption_constraint(flavor, image)
 
     def _get_image_defined_bdms(self, flavor, image_meta, root_device_name):
         image_properties = image_meta.get('properties', {})
@@ -1016,6 +1019,22 @@ class API:
                             " until upgrade finished.")
                         raise exception.ForbiddenPortsWithAccelerator(msg)
 
+    def _check_vnic_remote_managed_min_version(self, context):
+        min_version = (objects.service.get_minimum_version_all_cells(
+            context, ['nova-compute']))
+        if min_version < SUPPORT_VNIC_TYPE_REMOTE_MANAGED:
+            msg = ("Remote-managed ports are not supported"
+                   " until an upgrade is fully finished.")
+            raise exception.ForbiddenWithRemoteManagedPorts(msg)
+
+    def _check_support_vnic_remote_managed(self, context, requested_networks):
+        if requested_networks:
+            for request_net in requested_networks:
+                if (request_net.port_id and
+                        self.network_api.is_remote_managed_port(
+                            context, request_net.port_id)):
+                    self._check_vnic_remote_managed_min_version(context)
+
     def _validate_and_build_base_options(
         self, context, flavor, boot_meta, image_href, image_id, kernel_id,
         ramdisk_id, display_name, display_description, hostname, key_name,
@@ -1086,6 +1105,7 @@ class API:
         network_metadata, port_resource_requests, req_lvl_params = result
 
         self._check_support_vnic_accelerator(context, requested_networks)
+        self._check_support_vnic_remote_managed(context, requested_networks)
 
         # Creating servers with ports that have resource requests, like QoS
         # minimum bandwidth rules, is only supported in a requested minimum
@@ -1327,6 +1347,25 @@ class API:
         # Check quotas
         num_instances = compute_utils.check_num_instances_quota(
             context, flavor, min_count, max_count)
+
+        # Find out whether or not we are a BFV instance
+        if block_device_mapping:
+            root = block_device_mapping.root_bdm()
+            is_bfv = bool(root and root.is_volume)
+        else:
+            # If we have no BDMs, we're clearly not BFV
+            is_bfv = False
+
+        # NOTE(johngarbutt) when unified limits not used, this just
+        #   returns num_instances back again
+        # NOTE: If we want to enforce quota on port or cyborg resources in the
+        # future, this enforce call will need to move after we have populated
+        # the RequestSpec with all of the requested resources and use the real
+        # RequestSpec to get the overall resource usage of the instance.
+        num_instances = placement_limits.enforce_num_instances_and_flavor(
+                context, context.project_id, flavor,
+                is_bfv, min_count, num_instances)
+
         security_groups = security_group_api.populate_security_groups(
             security_groups)
         port_resource_requests = base_options.pop('port_resource_requests')
@@ -1369,14 +1408,7 @@ class API:
                     security_groups=security_groups,
                     port_resource_requests=port_resource_requests,
                     request_level_params=req_lvl_params)
-
-                if block_device_mapping:
-                    # Record whether or not we are a BFV instance
-                    root = block_device_mapping.root_bdm()
-                    req_spec.is_bfv = bool(root and root.is_volume)
-                else:
-                    # If we have no BDMs, we're clearly not BFV
-                    req_spec.is_bfv = False
+                req_spec.is_bfv = is_bfv
 
                 # NOTE(danms): We need to record num_instances on the request
                 # spec as this is how the conductor knows how many were in this
@@ -1451,10 +1483,15 @@ class API:
                             objects.Quotas.check_deltas(
                                 context, {'server_group_members': 1},
                                 instance_group, context.user_id)
+                            local_limit.enforce_db_limit(
+                                context, local_limit.SERVER_GROUP_MEMBERS,
+                                entity_scope=instance_group.uuid, delta=1)
+                        except exception.GroupMemberLimitExceeded:
+                            raise
                         except exception.OverQuota:
                             msg = _("Quota exceeded, too many servers in "
                                     "group")
-                            raise exception.QuotaError(msg)
+                            raise exception.OverQuota(msg)
 
                     members = objects.InstanceGroup.add_members(
                         context, instance_group.uuid, [instance.uuid])
@@ -1469,12 +1506,25 @@ class API:
                             objects.Quotas.check_deltas(
                                 context, {'server_group_members': 0},
                                 instance_group, context.user_id)
+                            # TODO(johngarbutt): decide if we need this check
+                            # The quota rechecking of limits is really just to
+                            # protect against denial of service attacks that
+                            # aim to fill up the database. Its usefulness could
+                            # be debated.
+                            local_limit.enforce_db_limit(
+                                context, local_limit.SERVER_GROUP_MEMBERS,
+                                entity_scope=instance_group.uuid, delta=0)
+                        except exception.GroupMemberLimitExceeded:
+                            with excutils.save_and_reraise_exception():
+                                objects.InstanceGroup._remove_members_in_db(
+                                    context, instance_group.id,
+                                    [instance.uuid])
                         except exception.OverQuota:
                             objects.InstanceGroup._remove_members_in_db(
                                 context, instance_group.id, [instance.uuid])
                             msg = _("Quota exceeded, too many servers in "
                                     "group")
-                            raise exception.QuotaError(msg)
+                            raise exception.OverQuota(msg)
                     # list of members added to servers group in this iteration
                     # is needed to check quota of server group during add next
                     # instance
@@ -2281,6 +2331,12 @@ class API:
         # Normal delete should be attempted.
         may_have_ports_or_volumes = compute_utils.may_have_ports_or_volumes(
             instance)
+
+        # Save a copy of the instance UUID early, in case
+        # _lookup_instance returns instance = None, to pass to
+        # _local_delete_cleanup if needed.
+        instance_uuid = instance.uuid
+
         if not instance.host and not may_have_ports_or_volumes:
             try:
                 if self._delete_while_booting(context, instance):
@@ -2294,10 +2350,6 @@ class API:
                 # full Instance or None if not found. If not found then it's
                 # acceptable to skip the rest of the delete processing.
 
-                # Save a copy of the instance UUID early, in case
-                # _lookup_instance returns instance = None, to pass to
-                # _local_delete_cleanup if needed.
-                instance_uuid = instance.uuid
                 cell, instance = self._lookup_instance(context, instance.uuid)
                 if cell and instance:
                     try:
@@ -2621,6 +2673,9 @@ class API:
         project_id, user_id = quotas_obj.ids_from_instance(context, instance)
         compute_utils.check_num_instances_quota(context, flavor, 1, 1,
                 project_id=project_id, user_id=user_id)
+        is_bfv = compute_utils.is_volume_backed_instance(context, instance)
+        placement_limits.enforce_num_instances_and_flavor(context, project_id,
+                                                         flavor, is_bfv, 1, 1)
 
         self._record_action_start(context, instance, instance_actions.RESTORE)
 
@@ -3738,9 +3793,22 @@ class API:
         # TODO(sean-k-mooney): add PCI NUMA affinity policy check.
 
     @staticmethod
-    def _check_quota_for_upsize(context, instance, current_flavor, new_flavor):
+    def _check_quota_for_upsize(context, instance, current_flavor,
+                                new_flavor, is_bfv, is_revert):
         project_id, user_id = quotas_obj.ids_from_instance(context,
                                                            instance)
+        # NOTE(johngarbutt) for resize, check for sum of existing usage
+        # plus the usage from new flavor, as it will be claimed in
+        # placement that way, even if there is no change in flavor
+        # But for revert resize, we are just removing claims in placement
+        # so we can ignore the quota check
+        if not is_revert:
+            placement_limits.enforce_num_instances_and_flavor(context,
+                                                              project_id,
+                                                              new_flavor,
+                                                              is_bfv, 1, 1)
+
+        # Old quota system only looks at the change in size.
         # Deltas will be empty if the resize is not an upsize.
         deltas = compute_utils.upsize_quota_delta(new_flavor,
                                                   current_flavor)
@@ -3782,8 +3850,11 @@ class API:
             elevated, instance.uuid, 'finished')
 
         # If this is a resize down, a revert might go over quota.
+        reqspec = objects.RequestSpec.get_by_instance_uuid(
+            context, instance.uuid)
         self._check_quota_for_upsize(context, instance, instance.flavor,
-                                     instance.old_flavor)
+                                     instance.old_flavor, reqspec.is_bfv,
+                                     is_revert=True)
 
         # The AZ for the server may have changed when it was migrated so while
         # we are in the API and have access to the API DB, update the
@@ -3807,8 +3878,6 @@ class API:
         # the scheduler will be using the wrong values. There's no need to do
         # this if the flavor hasn't changed though and we're migrating rather
         # than resizing.
-        reqspec = objects.RequestSpec.get_by_instance_uuid(
-            context, instance.uuid)
         if reqspec.flavor['id'] != instance.old_flavor['id']:
             reqspec.flavor = instance.old_flavor
             reqspec.numa_topology = hardware.numa_get_constraints(
@@ -4110,9 +4179,16 @@ class API:
 
         # ensure there is sufficient headroom for upsizes
         if flavor_id:
+            # Figure out if the instance is volume-backed but only if we didn't
+            # already figure that out above (avoid the extra db hit).
+            if volume_backed is None:
+                # TODO(johngarbutt) should we just use the request spec?
+                volume_backed = compute_utils.is_volume_backed_instance(
+                    context, instance)
             self._check_quota_for_upsize(context, instance,
                                          current_flavor,
-                                         new_flavor)
+                                         new_flavor, volume_backed,
+                                         is_revert=False)
 
         if not same_flavor:
             image = utils.get_image_from_system_metadata(
@@ -4800,10 +4876,24 @@ class API:
         This method is separated to make it possible for cells version
         to override it.
         """
-        volume_bdm = self._create_volume_bdm(
-            context, instance, device, volume, disk_bus=disk_bus,
-            device_type=device_type, tag=tag,
-            delete_on_termination=delete_on_termination)
+        try:
+            volume_bdm = self._create_volume_bdm(
+                context, instance, device, volume, disk_bus=disk_bus,
+                device_type=device_type, tag=tag,
+                delete_on_termination=delete_on_termination)
+        except oslo_exceptions.MessagingTimeout:
+            # The compute node might have already created the attachment but
+            # we never received the answer. In this case it is safe to delete
+            # the attachment as nobody will ever pick it up again.
+            with excutils.save_and_reraise_exception():
+                try:
+                    objects.BlockDeviceMapping.get_by_volume_and_instance(
+                        context, volume['id'], instance.uuid).destroy()
+                    LOG.debug("Delete BDM after compute did not respond to "
+                              f"attachment request for volume {volume['id']}")
+                except exception.VolumeBDMNotFound:
+                    LOG.debug("BDM not found, ignoring removal. "
+                              f"Error attaching volume {volume['id']}")
         try:
             self._check_attach_and_reserve_volume(context, volume, instance,
                                                   volume_bdm,
@@ -5141,7 +5231,11 @@ class API:
             context, instance, instance_actions.ATTACH_INTERFACE)
 
         if port_id:
-            port = self.network_api.show_port(context, port_id)['port']
+            # We need to query the port with admin context as
+            # ensure_compute_version_for_resource_request depends on the
+            # port.resource_request field which only returned for admins
+            port = self.network_api.show_port(
+                context.elevated(), port_id)['port']
             if port.get('binding:vnic_type', "normal") == "vdpa":
                 # FIXME(sean-k-mooney): Attach works but detach results in a
                 # QEMU error; blocked until this is resolved
@@ -5153,6 +5247,10 @@ class API:
                 network_model.VNIC_TYPE_ACCELERATOR_DIRECT,
                 network_model.VNIC_TYPE_ACCELERATOR_DIRECT_PHYSICAL):
                 raise exception.ForbiddenPortsWithAccelerator()
+
+            if port.get('binding:vnic_type',
+                        'normal') == network_model.VNIC_TYPE_REMOTE_MANAGED:
+                self._check_vnic_remote_managed_min_version(context)
 
             self.ensure_compute_version_for_resource_request(
                 context, instance, port)
@@ -6527,6 +6625,10 @@ class KeypairAPI:
                          '1 and 255 characters long'))
         try:
             objects.Quotas.check_deltas(context, {'key_pairs': 1}, user_id)
+            local_limit.enforce_db_limit(context, local_limit.KEY_PAIRS,
+                                         entity_scope=user_id, delta=1)
+        except exception.KeypairLimitExceeded:
+            raise
         except exception.OverQuota:
             raise exception.KeypairLimitExceeded()
 
@@ -6599,6 +6701,15 @@ class KeypairAPI:
         if CONF.quota.recheck_quota:
             try:
                 objects.Quotas.check_deltas(context, {'key_pairs': 0}, user_id)
+                # TODO(johngarbutt) do we really need this recheck?
+                # The quota rechecking of limits is really just to protect
+                # against denial of service attacks that aim to fill up the
+                # database. Its usefulness could be debated.
+                local_limit.enforce_db_limit(context, local_limit.KEY_PAIRS,
+                                             entity_scope=user_id, delta=0)
+            except exception.KeypairLimitExceeded:
+                with excutils.save_and_reraise_exception():
+                    keypair.destroy()
             except exception.OverQuota:
                 keypair.destroy()
                 raise exception.KeypairLimitExceeded()

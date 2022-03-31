@@ -135,6 +135,10 @@ class GlanceConnectionFailed(NovaException):
         "%(reason)s")
 
 
+class KeystoneConnectionFailed(NovaException):
+    msg_fmt = _("Connection to keystone host failed: %(reason)s")
+
+
 class CinderConnectionFailed(NovaException):
     msg_fmt = _("Connection to cinder host failed: %(reason)s")
 
@@ -173,6 +177,11 @@ class ForbiddenWithAccelerators(NotSupported):
 
 class ForbiddenPortsWithAccelerator(NotSupported):
     msg_fmt = _("Feature not supported with Ports that have accelerators.")
+
+
+class ForbiddenWithRemoteManagedPorts(NotSupported):
+    msg_fmt = _("This feature is not supported when remote-managed ports"
+                " are in use.")
 
 
 class AdminRequired(Forbidden):
@@ -731,6 +740,10 @@ class InvalidImageRef(Invalid):
     msg_fmt = _("Invalid image href %(image_href)s.")
 
 
+class InvalidImagePropertyName(Invalid):
+    msg_fmt = _("Invalid image property name %(image_property_name)s.")
+
+
 class AutoDiskConfigDisabledByImage(Invalid):
     msg_fmt = _("Requested image %(image)s "
                 "has automatic disk resize disabled.")
@@ -993,10 +1006,6 @@ class QuotaClassExists(NovaException):
     msg_fmt = _("Quota class %(class_name)s exists for resource %(resource)s")
 
 
-class OverQuota(NovaException):
-    msg_fmt = _("Quota exceeded for resources: %(overs)s")
-
-
 class SecurityGroupNotFound(NotFound):
     msg_fmt = _("Security group %(security_group_id)s not found.")
 
@@ -1233,29 +1242,26 @@ class MaxRetriesExceeded(NoValidHost):
     msg_fmt = _("Exceeded maximum number of retries. %(reason)s")
 
 
-class QuotaError(NovaException):
-    msg_fmt = _("Quota exceeded: code=%(code)s")
-    # NOTE(cyeoh): 413 should only be used for the ec2 API
-    # The error status code for out of quota for the nova api should be
-    # 403 Forbidden.
+class OverQuota(NovaException):
+    msg_fmt = _("Quota exceeded for resources: %(overs)s")
     code = 413
     safe = True
 
 
-class TooManyInstances(QuotaError):
+class TooManyInstances(OverQuota):
     msg_fmt = _("Quota exceeded for %(overs)s: Requested %(req)s,"
                 " but already used %(used)s of %(allowed)s %(overs)s")
 
 
-class FloatingIpLimitExceeded(QuotaError):
+class FloatingIpLimitExceeded(OverQuota):
     msg_fmt = _("Maximum number of floating IPs exceeded")
 
 
-class MetadataLimitExceeded(QuotaError):
+class MetadataLimitExceeded(OverQuota):
     msg_fmt = _("Maximum number of metadata items exceeds %(allowed)d")
 
 
-class OnsetFileLimitExceeded(QuotaError):
+class OnsetFileLimitExceeded(OverQuota):
     msg_fmt = _("Personality file limit exceeded")
 
 
@@ -1267,16 +1273,24 @@ class OnsetFileContentLimitExceeded(OnsetFileLimitExceeded):
     msg_fmt = _("Personality file content exceeds maximum %(allowed)s")
 
 
-class KeypairLimitExceeded(QuotaError):
-    msg_fmt = _("Maximum number of key pairs exceeded")
+class KeypairLimitExceeded(OverQuota):
+    msg_fmt = _("Quota exceeded, too many key pairs.")
 
 
-class SecurityGroupLimitExceeded(QuotaError):
+class SecurityGroupLimitExceeded(OverQuota):
     msg_fmt = _("Maximum number of security groups or rules exceeded")
 
 
-class PortLimitExceeded(QuotaError):
+class PortLimitExceeded(OverQuota):
     msg_fmt = _("Maximum number of ports exceeded")
+
+
+class ServerGroupLimitExceeded(OverQuota):
+    msg_fmt = _("Quota exceeded, too many server groups.")
+
+
+class GroupMemberLimitExceeded(OverQuota):
+    msg_fmt = _("Quota exceeded, too many servers in group")
 
 
 class AggregateNotFound(NotFound):
@@ -1563,6 +1577,16 @@ class PciConfigInvalidWhitelist(Invalid):
 class PciRequestFromVIFNotFound(NotFound):
     msg_fmt = _("Failed to locate PCI request associated with the given VIF "
                 "PCI address: %(pci_slot)s on compute node: %(node_id)s")
+
+
+class PciDeviceRemoteManagedNotPresent(NovaException):
+    msg_fmt = _('Invalid PCI Whitelist: A device specified as "remote_managed"'
+                ' is not actually present on the host')
+
+
+class PciDeviceInvalidPFRemoteManaged(NovaException):
+    msg_fmt = _('Invalid PCI Whitelist: PFs must not have the "remote_managed"'
+                'tag, device address: %(address)s')
 
 
 # Cannot be templated, msg needs to be constructed when raised.
@@ -1861,11 +1885,6 @@ class ImageCPUThreadPolicyForbidden(Forbidden):
                 "override CPU thread pinning policy set against the flavor")
 
 
-class ImagePMUConflict(Forbidden):
-    msg_fmt = _("Image property 'hw_pmu' is not permitted to "
-                "override the PMU policy set in the flavor")
-
-
 class UnsupportedPolicyException(Invalid):
     msg_fmt = _("ServerGroup policy is not supported: %(reason)s")
 
@@ -1918,6 +1937,10 @@ class UEFINotSupported(Invalid):
 
 class SecureBootNotSupported(Invalid):
     msg_fmt = _("Secure Boot is not supported by host")
+
+
+class FirmwareSMMNotSupported(Invalid):
+    msg_fmt = _("This firmware doesn't require (support) SMM")
 
 
 class TriggerCrashDumpNotSupported(Invalid):
@@ -2291,28 +2314,6 @@ class HealPortAllocationException(NovaException):
     msg_fmt = _("Healing port allocation failed.")
 
 
-class MoreThanOneResourceProviderToHealFrom(HealPortAllocationException):
-    msg_fmt = _("More than one matching resource provider %(rp_uuids)s is "
-                "available for healing the port allocation for port "
-                "%(port_id)s for instance %(instance_uuid)s. This script "
-                "does not have enough information to select the proper "
-                "resource provider from which to heal.")
-
-
-class NoResourceProviderToHealFrom(HealPortAllocationException):
-    msg_fmt = _("No matching resource provider is "
-                "available for healing the port allocation for port "
-                "%(port_id)s for instance %(instance_uuid)s. There are no "
-                "resource providers with matching traits %(traits)s in the "
-                "provider tree of the resource provider %(node_uuid)s ."
-                "This probably means that the neutron QoS configuration is "
-                "wrong. Consult with "
-                "https://docs.openstack.org/neutron/latest/admin/"
-                "config-qos-min-bw.html for information on how to configure "
-                "neutron. If the configuration is fixed the script can be run "
-                "again.")
-
-
 class UnableToQueryPorts(HealPortAllocationException):
     msg_fmt = _("Unable to query ports for instance %(instance_uuid)s: "
                 "%(error)s")
@@ -2384,8 +2385,9 @@ class AcceleratorRequestOpFailed(NovaException):
 class AcceleratorRequestBindingFailed(NovaException):
     msg_fmt = _("Failed to bind accelerator requests: %(msg)s")
 
-    def __init__(self, arqs, **kwargs):
-        super().__init__(message=self.msg_fmt, **kwargs)
+    def __init__(self, message=None, arqs=None, **kwargs):
+        super(AcceleratorRequestBindingFailed, self).__init__(
+            message=message, **kwargs)
         self.arqs = arqs or []
 
 

@@ -25,7 +25,6 @@ import sys
 import urllib
 
 from cinderclient import api_versions as cinder_api_versions
-from cinderclient import apiclient as cinder_apiclient
 from cinderclient import client as cinder_client
 from cinderclient import exceptions as cinder_exception
 from keystoneauth1 import exceptions as keystone_exception
@@ -413,6 +412,7 @@ def translate_cinder_exception(method):
 def translate_create_exception(method):
     """Transforms the exception for create but keeps its traceback intact.
     """
+
     def wrapper(self, ctx, size, *args, **kwargs):
         try:
             res = method(self, ctx, size, *args, **kwargs)
@@ -427,6 +427,7 @@ def translate_create_exception(method):
 def translate_volume_exception(method):
     """Transforms the exception for the volume but keeps its traceback intact.
     """
+
     def wrapper(self, ctx, volume_id, *args, **kwargs):
         try:
             res = method(self, ctx, volume_id, *args, **kwargs)
@@ -442,6 +443,7 @@ def translate_attachment_exception(method):
     """Transforms the exception for the attachment but keeps its traceback
     intact.
     """
+
     def wrapper(self, ctx, attachment_id, *args, **kwargs):
         try:
             res = method(self, ctx, attachment_id, *args, **kwargs)
@@ -456,6 +458,7 @@ def translate_snapshot_exception(method):
     """Transforms the exception for the snapshot but keeps its traceback
        intact.
     """
+
     def wrapper(self, ctx, snapshot_id, *args, **kwargs):
         try:
             res = method(self, ctx, snapshot_id, *args, **kwargs)
@@ -467,6 +470,7 @@ def translate_snapshot_exception(method):
 
 def translate_mixed_exceptions(method):
     """Transforms exceptions that can come from both volumes and snapshots."""
+
     def wrapper(self, ctx, res_id, *args, **kwargs):
         try:
             res = method(self, ctx, res_id, *args, **kwargs)
@@ -567,7 +571,8 @@ class API(object):
     @translate_volume_exception
     @retrying.retry(stop_max_attempt_number=5,
                     retry_on_exception=lambda e:
-                    type(e) == cinder_apiclient.exceptions.InternalServerError)
+                    (isinstance(e, cinder_exception.ClientException) and
+                     e.code == 500))
     def detach(self, context, volume_id, instance_uuid=None,
                attachment_id=None):
         client = cinderclient(context)
@@ -632,7 +637,8 @@ class API(object):
     @translate_volume_exception
     @retrying.retry(stop_max_attempt_number=5,
                     retry_on_exception=lambda e:
-                    type(e) == cinder_apiclient.exceptions.InternalServerError)
+                    (isinstance(e, cinder_exception.ClientException) and
+                     e.code == 500))
     def terminate_connection(self, context, volume_id, connector):
         return cinderclient(context).volumes.terminate_connection(volume_id,
                                                                   connector)
@@ -881,7 +887,8 @@ class API(object):
     @translate_attachment_exception
     @retrying.retry(stop_max_attempt_number=5,
                     retry_on_exception=lambda e:
-                    type(e) == cinder_apiclient.exceptions.InternalServerError)
+                    (isinstance(e, cinder_exception.ClientException) and
+                     e.code == 500))
     def attachment_delete(self, context, attachment_id):
         try:
             cinderclient(
@@ -917,3 +924,9 @@ class API(object):
                           {'id': attachment_id,
                            'msg': str(ex),
                            'code': getattr(ex, 'code', None)})
+
+    @translate_volume_exception
+    def reimage_volume(self, context, volume_id, image_id,
+                       reimage_reserved=False):
+        cinderclient(context, '3.68').volumes.reimage(
+            volume_id, image_id, reimage_reserved)

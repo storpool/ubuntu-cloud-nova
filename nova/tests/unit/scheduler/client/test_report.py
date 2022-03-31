@@ -3184,15 +3184,41 @@ class TestAssociations(SchedulerReportClientTestCase):
 
 class TestAllocations(SchedulerReportClientTestCase):
 
+    @mock.patch("nova.scheduler.client.report.SchedulerReportClient."
+                "remove_provider_tree_from_instance_allocation")
+    @mock.patch('nova.objects.MigrationList.get_by_filters')
+    def test_remove_allocations_for_evacuated_instances(self,
+            mock_get_migrations, mock_rm_pr_tree):
+        cn = objects.ComputeNode(uuid=uuids.cn, host="fake_host",
+                hypervisor_hostname="fake_hostname", )
+        migrations = [mock.Mock(instance_uuid=uuids.inst1, status='done'),
+                      mock.Mock(instance_uuid=uuids.inst2, status='done')]
+        mock_get_migrations.return_value = migrations
+        mock_rm_pr_tree.return_value = True
+        self.client._remove_allocations_for_evacuated_instances(self.context,
+                                                                cn)
+        mock_get_migrations.assert_called_once_with(
+            self.context,
+            {'source_compute': cn.host, 'status': ['done'],
+             'migration_type': 'evacuation'})
+        mock_rm_pr_tree.assert_has_calls(
+            [mock.call(self.context, uuids.inst1, cn.uuid),
+             mock.call(self.context, uuids.inst2, cn.uuid)])
+        # status of migrations should be kept
+        for migration in migrations:
+            self.assertEqual('done', migration.status)
+
     @mock.patch('nova.scheduler.client.report.SchedulerReportClient.'
                 'get_providers_in_tree')
     @mock.patch("nova.scheduler.client.report.SchedulerReportClient."
                 "delete")
     @mock.patch("nova.scheduler.client.report.SchedulerReportClient."
+                "_remove_allocations_for_evacuated_instances")
+    @mock.patch("nova.scheduler.client.report.SchedulerReportClient."
                 "delete_allocation_for_instance")
     @mock.patch("nova.objects.InstanceList.get_uuids_by_host_and_node")
     def test_delete_resource_provider_cascade(self, mock_by_host,
-            mock_del_alloc, mock_delete, mock_get_rpt):
+            mock_del_alloc, mock_evacuate, mock_delete, mock_get_rpt):
         cn = objects.ComputeNode(uuid=uuids.cn, host="fake_host",
                 hypervisor_hostname="fake_hostname", )
         mock_by_host.return_value = [uuids.inst1, uuids.inst2]
@@ -3208,6 +3234,7 @@ class TestAllocations(SchedulerReportClientTestCase):
         mock_by_host.assert_called_once_with(
             self.context, cn.host, cn.hypervisor_hostname)
         self.assertEqual(2, mock_del_alloc.call_count)
+        mock_evacuate.assert_called_once_with(self.context, cn)
         exp_url = "/resource_providers/%s" % uuids.cn
         mock_delete.assert_called_once_with(
             exp_url, global_request_id=self.context.global_id)
@@ -3218,10 +3245,12 @@ class TestAllocations(SchedulerReportClientTestCase):
     @mock.patch("nova.scheduler.client.report.SchedulerReportClient."
                 "delete")
     @mock.patch("nova.scheduler.client.report.SchedulerReportClient."
+                "_remove_allocations_for_evacuated_instances")
+    @mock.patch("nova.scheduler.client.report.SchedulerReportClient."
                 "delete_allocation_for_instance")
     @mock.patch("nova.objects.InstanceList.get_uuids_by_host_and_node")
     def test_delete_resource_provider_no_cascade(self, mock_by_host,
-            mock_del_alloc, mock_delete, mock_get_rpt):
+            mock_del_alloc, mock_evacuate, mock_delete, mock_get_rpt):
         self.client._association_refresh_time[uuids.cn] = mock.Mock()
         cn = objects.ComputeNode(uuid=uuids.cn, host="fake_host",
                 hypervisor_hostname="fake_hostname", )
@@ -3236,6 +3265,7 @@ class TestAllocations(SchedulerReportClientTestCase):
         mock_delete.return_value = resp_mock
         self.client.delete_resource_provider(self.context, cn)
         mock_del_alloc.assert_not_called()
+        mock_evacuate.assert_not_called()
         exp_url = "/resource_providers/%s" % uuids.cn
         mock_delete.assert_called_once_with(
             exp_url, global_request_id=self.context.global_id)
@@ -4183,6 +4213,7 @@ class TestAggregateAddRemoveHost(SchedulerReportClientTestCase):
     access the SchedulerReportClient provider_tree attribute and are called
     from the nova API, not the nova compute manager/resource tracker.
     """
+
     def setUp(self):
         super(TestAggregateAddRemoveHost, self).setUp()
         self.mock_get = self.useFixture(
@@ -4606,3 +4637,31 @@ class TestUsages(SchedulerReportClientTestCase):
         expected = {'project': {'cores': 4, 'ram': 0},
                     'user': {'cores': 4, 'ram': 0}}
         self.assertDictEqual(expected, counts)
+
+    @mock.patch('nova.scheduler.client.report.SchedulerReportClient.get')
+    def test_get_usages_counts_for_limits(self, mock_get):
+        fake_responses = fake_requests.FakeResponse(
+            200,
+            content=jsonutils.dumps({'usages': {orc.VCPU: 2, orc.PCPU: 2}}))
+        mock_get.return_value = fake_responses
+
+        counts = self.client.get_usages_counts_for_limits(
+            self.context, 'fake-project')
+
+        expected = {orc.VCPU: 2, orc.PCPU: 2}
+        self.assertDictEqual(expected, counts)
+        self.assertEqual(1, mock_get.call_count)
+
+    @mock.patch('nova.scheduler.client.report.SchedulerReportClient.get')
+    def test_get_usages_counts_for_limits_fails(self, mock_get):
+        fake_failure_response = fake_requests.FakeResponse(500)
+        mock_get.side_effect = [ks_exc.ConnectFailure, fake_failure_response]
+
+        e = self.assertRaises(exception.UsagesRetrievalFailed,
+                              self.client.get_usages_counts_for_limits,
+                              self.context, 'fake-project')
+
+        expected = "Failed to retrieve usages for project 'fake-project' " \
+                   "and user 'N/A'."
+        self.assertEqual(expected, str(e))
+        self.assertEqual(2, mock_get.call_count)

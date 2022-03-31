@@ -48,6 +48,7 @@ CONF.register_opts(test_service_opts)
 
 class FakeManager(manager.Manager):
     """Fake manager for tests."""
+
     def test_method(self):
         return 'manager'
 
@@ -156,7 +157,7 @@ class ServiceTestCase(test.NoDBTestCase):
         service_obj = mock.Mock()
         service_obj.binary = 'fake-binary'
         service_obj.host = 'fake-host'
-        service_obj.version = -42
+        service_obj.version = 42
         mock_get_by_host_and_binary.return_value = service_obj
 
         serv = service.Service(self.host, self.binary, self.topic,
@@ -285,6 +286,29 @@ class ServiceTestCase(test.NoDBTestCase):
 
         mock_check_old.assert_called_once_with()
         mock_wait.assert_called_once_with(mock.ANY)
+
+    @mock.patch('nova.utils.raise_if_old_compute')
+    def test_old_compute_version_check_workaround(
+            self, mock_check_old):
+
+        mock_check_old.side_effect = exception.TooOldComputeService(
+            oldest_supported_version='2',
+            scope='scope',
+            min_service_level=2,
+            oldest_supported_service=1)
+
+        self.assertRaises(exception.TooOldComputeService,
+                          service.Service.create,
+                          self.host, 'nova-conductor', self.topic,
+                          'nova.tests.unit.test_service.FakeManager')
+
+        CONF.set_override('disable_compute_service_check_for_ffu', True,
+                          group='workarounds')
+
+        service.Service.create(self.host, 'nova-conductor', self.topic,
+                               'nova.tests.unit.test_service.FakeManager')
+
+        mock_check_old.assert_has_calls([mock.call(), mock.call()])
 
 
 class TestWSGIService(test.NoDBTestCase):
