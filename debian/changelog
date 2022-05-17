@@ -1,8 +1,26 @@
-nova (3:24.0.0-0ubuntu1~cloud0) focal-xena; urgency=medium
+nova (3:24.1.0-0ubuntu2~cloud0) focal-xena; urgency=medium
 
   * New upstream release for the Ubuntu Cloud Archive.
 
- -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Thu, 07 Oct 2021 10:53:07 +0000
+ -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Tue, 17 May 2022 18:35:26 +0000
+
+nova (3:24.1.0-0ubuntu2) impish; urgency=medium
+
+  [ Felipe Reyes ]
+  * d/nova-common.postinst: Don't change file permissions under
+    /var/lib/nova/.ssh (LP: #1904580).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Mon, 16 May 2022 13:48:35 -0400
+
+nova (3:24.1.0-0ubuntu1) impish; urgency=medium
+
+  [ Corey Bryant ]
+  * d/gbp.conf: Create stable/xena branch.
+
+  [ Felipe Reyes ]
+  * New stable point release for OpenStack Xena (LP: #1972665).
+
+ -- Felipe Reyes <felipe.reyes@canonical.com>  Mon, 09 May 2022 12:29:15 -0400
 
 nova (3:24.0.0-0ubuntu1) impish; urgency=medium
 

@@ -4,7 +4,7 @@
 - job:
     name: nova-tox-functional-centos8-py36
     parent: openstack-tox-functional-py36
-    nodeset: devstack-single-node-centos-8
+    nodeset: devstack-single-node-centos-8-stream
     description: |
       Run tox-based functional tests for the OpenStack Nova project
       under cPython version 3.6 with Nova specific irrelevant-files list.
@@ -237,7 +237,7 @@
       # tempest_test_exclude_list.
       # FIXME(lyarwood): The tempest.api.compute.admin.test_volume_swap tests
       # are skipped until bug #1929710 is resolved.
-      tempest_exclude_regex: ^tempest\.(scenario\.test_network|api\.compute\.admin\.test_volume_swap)
+      tempest_exclude_regex: ^tempest\.(scenario\.test_network|api\.compute\.admin\.test_volume_swap|api\.compute\.servers\.test_device_tagging\.TaggedAttachmentsTest\.test_tagged_attachment)
       devstack_local_conf:
         post-config:
           $NOVA_CPU_CONF:
@@ -251,6 +251,12 @@
               # reduce the number of placement calls in steady state. Added in
               # Stein.
               resource_provider_association_refresh: 0
+            workarounds:
+              # This wa is an improvement on hard reboot that cannot be turned
+              # on unconditionally. But we know that ml2/ovs sends plug time
+              # events so we can enable this in this ovs job for vnic_type
+              # normal
+              wait_for_vif_plugged_event_during_hard_reboot: normal
           $NOVA_CONF:
             quota:
               # Added in Train.

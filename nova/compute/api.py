@@ -2281,6 +2281,12 @@ class API:
         # Normal delete should be attempted.
         may_have_ports_or_volumes = compute_utils.may_have_ports_or_volumes(
             instance)
+
+        # Save a copy of the instance UUID early, in case
+        # _lookup_instance returns instance = None, to pass to
+        # _local_delete_cleanup if needed.
+        instance_uuid = instance.uuid
+
         if not instance.host and not may_have_ports_or_volumes:
             try:
                 if self._delete_while_booting(context, instance):
@@ -2294,10 +2300,6 @@ class API:
                 # full Instance or None if not found. If not found then it's
                 # acceptable to skip the rest of the delete processing.
 
-                # Save a copy of the instance UUID early, in case
-                # _lookup_instance returns instance = None, to pass to
-                # _local_delete_cleanup if needed.
-                instance_uuid = instance.uuid
                 cell, instance = self._lookup_instance(context, instance.uuid)
                 if cell and instance:
                     try:
@@ -5141,7 +5143,11 @@ class API:
             context, instance, instance_actions.ATTACH_INTERFACE)
 
         if port_id:
-            port = self.network_api.show_port(context, port_id)['port']
+            # We need to query the port with admin context as
+            # ensure_compute_version_for_resource_request depends on the
+            # port.resource_request field which only returned for admins
+            port = self.network_api.show_port(
+                context.elevated(), port_id)['port']
             if port.get('binding:vnic_type', "normal") == "vdpa":
                 # FIXME(sean-k-mooney): Attach works but detach results in a
                 # QEMU error; blocked until this is resolved
