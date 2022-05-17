@@ -1,8 +1,19 @@
-nova (3:25.0.0-0ubuntu1~cloud0) focal-yoga; urgency=medium
+nova (3:25.0.0-0ubuntu1.1~cloud0) focal-yoga; urgency=medium
 
-  * New upstream release for the Ubuntu Cloud Archive.
+  * New update for the Ubuntu Cloud Archive.
 
- -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Thu, 31 Mar 2022 16:16:22 +0000
+ -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Tue, 17 May 2022 18:50:56 +0000
+
+nova (3:25.0.0-0ubuntu1.1) jammy; urgency=medium
+
+  [ Corey Bryant ]
+  * d/gbp.conf: Create stable/yoga branch.
+
+  [ Felipe Reyes ]
+  * d/nova-common.postinst: Don't change file permissions under
+    /var/lib/nova/.ssh (LP: #1904580).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Mon, 16 May 2022 13:45:34 -0400
 
 nova (3:25.0.0-0ubuntu1) jammy; urgency=medium
 
