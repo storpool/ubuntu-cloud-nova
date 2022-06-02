@@ -1,3 +1,11 @@
+nova (3:25.0.0-0ubuntu1~cloud0+0~0~0.sp1) focal-yoga; urgency=medium
+
+  * Non-maintainer upload for patch tracking only.
+  * Add the StorPool hardcode-libvirt-domain-iothread patch to force
+    libvirt/KVM to use iothreads for the disk devices in the Nova instances.
+
+ -- Peter Pentchev <pp@storpool.com>  Thu, 02 Jun 2022 12:15:58 +0300
+
 nova (3:25.0.0-0ubuntu1~cloud0) focal-yoga; urgency=medium
 
   * New upstream release for the Ubuntu Cloud Archive.
