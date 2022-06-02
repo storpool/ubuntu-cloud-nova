@@ -1784,6 +1784,106 @@ def get_pci_numa_policy_constraint(
     return policy
 
 
+def get_pmu_constraint(
+    flavor: 'objects.Flavor',
+    image_meta: 'objects.ImageMeta',
+) -> ty.Optional[bool]:
+    """Validate and return the requested vPMU configuration.
+
+    This one's a little different since we don't return False in the default
+    case: the PMU should only be configured if explicit configuration is
+    provided, otherwise we leave it to the hypervisor.
+
+    :param flavor: ``nova.objects.Flavor`` instance
+    :param image_meta: ``nova.objects.ImageMeta`` instance
+    :raises: nova.exception.FlavorImageConflict if a value is specified in both
+        the flavor and the image, but the values do not match
+    :raises: nova.exception.Invalid if a value or combination of values is
+        invalid
+    :returns: True if the virtual Performance Monitoring Unit must be enabled,
+        False if it should be disabled, or None if unconfigured.
+    """
+    flavor_value_str, image_value = _get_flavor_image_meta(
+        'pmu', flavor, image_meta)
+
+    flavor_value = None
+    if flavor_value_str is not None:
+        flavor_value = strutils.bool_from_string(flavor_value_str)
+
+    if (
+        image_value is not None and
+        flavor_value is not None and
+        image_value != flavor_value
+    ):
+        msg = _(
+            "Flavor %(flavor_name)s has %(prefix)s:%(key)s extra spec "
+            "explicitly set to %(flavor_val)s, conflicting with image "
+            "%(image_name)s which has %(prefix)s_%(key)s explicitly set to "
+            "%(image_val)s."
+        )
+        raise exception.FlavorImageConflict(
+            msg % {
+                'prefix': 'hw',
+                'key': 'pmu',
+                'flavor_name': flavor.name,
+                'flavor_val': flavor_value,
+                'image_name': image_meta.name,
+                'image_val': image_value,
+            },
+        )
+
+    return flavor_value if flavor_value is not None else image_value
+
+
+def get_vif_multiqueue_constraint(
+    flavor: 'objects.Flavor',
+    image_meta: 'objects.ImageMeta',
+) -> bool:
+    """Validate and return the requested VIF multiqueue configuration.
+
+    :param flavor: ``nova.objects.Flavor`` instance
+    :param image_meta: ``nova.objects.ImageMeta`` instance
+    :raises: nova.exception.FlavorImageConflict if a value is specified in both
+        the flavor and the image, but the values do not match
+    :raises: nova.exception.Invalid if a value or combination of values is
+        invalid
+    :returns: True if the multiqueue must be enabled, else False.
+    """
+    if flavor.vcpus < 2:
+        return False
+
+    flavor_value_str, image_value = _get_flavor_image_meta(
+        'vif_multiqueue_enabled', flavor, image_meta)
+
+    flavor_value = None
+    if flavor_value_str is not None:
+        flavor_value = strutils.bool_from_string(flavor_value_str)
+
+    if (
+        image_value is not None and
+        flavor_value is not None and
+        image_value != flavor_value
+    ):
+        msg = _(
+            "Flavor %(flavor_name)s has %(prefix)s:%(key)s extra spec "
+            "explicitly set to %(flavor_val)s, conflicting with image "
+            "%(image_name)s which has %(prefix)s_%(key)s explicitly set to "
+            "%(image_val)s."
+        )
+        raise exception.FlavorImageConflict(
+            msg % {
+                'prefix': 'hw',
+                'key': 'vif_multiqueue_enabled',
+                'flavor_name': flavor.name,
+                'flavor_val': flavor_value,
+                'image_name': image_meta.name,
+                'image_val': image_value,
+            }
+        )
+
+    return flavor_value or image_value or False
+
+
 def get_vtpm_constraint(
     flavor: 'objects.Flavor',
     image_meta: 'objects.ImageMeta',
@@ -2195,14 +2295,67 @@ def numa_fit_instance_to_host(
 
     host_cells = host_topology.cells
 
-    # If PCI device(s) are not required, prefer host cells that don't have
-    # devices attached. Presence of a given numa_node in a PCI pool is
-    # indicative of a PCI device being associated with that node
-    if not pci_requests and pci_stats:
-        # TODO(stephenfin): pci_stats can't be None here but mypy can't figure
-        # that out for some reason
-        host_cells = sorted(host_cells, key=lambda cell: cell.id in [
-            pool['numa_node'] for pool in pci_stats.pools])  # type: ignore
+    # We need to perform all optimizations only if number of instance's
+    # cells less than host's cells number. If it's equal, we'll use
+    # all cells and no sorting of the cells list is needed.
+    if len(host_topology) > len(instance_topology):
+        pack = CONF.compute.packing_host_numa_cells_allocation_strategy
+        # To balance NUMA cells usage based on several parameters
+        # some sorts performed on host_cells list to move less used cells
+        # to the beginning of the host_cells list (when pack variable is set to
+        # 'False'). When pack is set to 'True', most used cells will be put at
+        # the beginning of the host_cells list.
+
+        # Fist sort is based on memory usage. cell.avail_memory returns free
+        # memory for cell. Revert sorting to get cells with more free memory
+        # first when pack is 'False'
+        host_cells = sorted(
+            host_cells,
+            reverse=not pack,
+            key=lambda cell: cell.avail_memory)
+
+        # Next sort based on available dedicated or shared CPUs.
+        # cpu_policy is set to the same value in all cells so we use
+        # first cell in list (it exists if instance_topology defined)
+        # to get cpu_policy
+        if instance_topology.cells[0].cpu_policy in (
+                None, fields.CPUAllocationPolicy.SHARED):
+            # sort based on used CPUs
+            host_cells = sorted(
+                host_cells,
+                reverse=pack,
+                key=lambda cell: cell.cpu_usage)
+
+        else:
+            # sort based on presence of pinned CPUs
+            host_cells = sorted(
+                host_cells,
+                reverse=not pack,
+                key=lambda cell: len(cell.free_pcpus))
+
+        # Perform sort only if pci_stats exists
+        if pci_stats:
+            # Create dict with numa cell id as key
+            # and total number of free pci devices as value.
+            total_pci_in_cell: ty.Dict[int, int] = {}
+            for pool in pci_stats.pools:
+                if pool['numa_node'] in list(total_pci_in_cell):
+                    total_pci_in_cell[pool['numa_node']] += pool['count']
+                else:
+                    total_pci_in_cell[pool['numa_node']] = pool['count']
+            # For backward compatibility we will always 'spread':
+            # we always move host cells with PCI at the beginning if PCI
+            # requested by VM and move host cells with PCI at the end of the
+            # list if PCI isn't requested by VM
+            if pci_requests:
+                host_cells = sorted(
+                    host_cells,
+                    reverse=True,
+                    key=lambda cell: total_pci_in_cell.get(cell.id, 0))
+            else:
+                host_cells = sorted(
+                    host_cells,
+                    key=lambda cell: total_pci_in_cell.get(cell.id, 0))
 
     for host_cell_perm in itertools.permutations(
             host_cells, len(instance_topology)):

@@ -116,6 +116,7 @@ class FakeDriver(driver.ComputeDriver):
         "supports_trusted_certs": True,
         "supports_pcpus": False,
         "supports_accelerators": True,
+        "supports_remote_managed_ports": True,
 
         # Supported image types
         "supports_image_type_raw": True,
@@ -757,6 +758,7 @@ class PredictableNodeUUIDDriver(SmallFakeDriver):
     """SmallFakeDriver variant that reports a predictable node uuid in
     get_available_resource, like IronicDriver.
     """
+
     def get_available_resource(self, nodename):
         resources = super(
             PredictableNodeUUIDDriver, self).get_available_resource(nodename)
@@ -798,6 +800,7 @@ class FakeBuildAbortDriver(FakeDriver):
     """FakeDriver derivative that always fails on spawn() with a
     BuildAbortException so no reschedule is attempted.
     """
+
     def spawn(self, context, instance, image_meta, injected_files,
               admin_password, allocations, network_info=None,
               block_device_info=None, power_on=True, accel_info=None):
@@ -814,6 +817,7 @@ class FakeUnshelveSpawnFailDriver(FakeDriver):
     """FakeDriver derivative that always fails on spawn() with a
     VirtualInterfaceCreateException when unshelving an offloaded instance.
     """
+
     def spawn(self, context, instance, image_meta, injected_files,
               admin_password, allocations, network_info=None,
               block_device_info=None, power_on=True, accel_info=None):
@@ -950,6 +954,14 @@ class FakeDriverWithPciResources(SmallFakeDriver):
                 ),
             ],
                              group='pci')
+
+            self.useFixture(fixtures.MockPatch(
+                'nova.pci.utils.get_mac_by_pci_address',
+                return_value='52:54:00:1e:59:c6'))
+
+            self.useFixture(fixtures.MockPatch(
+                'nova.pci.utils.get_vf_num_by_pci_address',
+                return_value=1))
 
     def get_available_resource(self, nodename):
         host_status = super(

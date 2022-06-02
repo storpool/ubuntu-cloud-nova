@@ -34,6 +34,7 @@ class LibvirtScaleIOVolumeDriver(libvirt_volume.LibvirtBaseVolumeDriver):
     Implements Libvirt part of volume driver for ScaleIO cinder driver.
     Uses the ScaleIO connector from the os-brick projects
     """
+
     def __init__(self, host):
         super(LibvirtScaleIOVolumeDriver, self).__init__(host,
                                                          is_block_dev=False)
@@ -52,7 +53,8 @@ class LibvirtScaleIOVolumeDriver(libvirt_volume.LibvirtBaseVolumeDriver):
 
     def connect_volume(self, connection_info, instance):
         device_info = self.connector.connect_volume(connection_info['data'])
-        LOG.debug("Attached ScaleIO volume %s.", device_info)
+        LOG.debug("Attached ScaleIO volume %s.", device_info,
+                  instance=instance)
         connection_info['data']['device_path'] = device_info['path']
 
     def disconnect_volume(self, connection_info, instance):

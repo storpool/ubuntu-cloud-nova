@@ -10,22 +10,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""Tests for database migrations.
+"""Tests for database migrations for the API database.
 
-There are "opportunistic" tests which allows testing against all 3 databases
+These are "opportunistic" tests which allow testing against all three databases
 (sqlite in memory, mysql, pg) in a properly configured unit test environment.
 
-For the opportunistic testing you need to set up db's named 'openstack_citest'
+For the opportunistic testing you need to set up DBs named 'openstack_citest'
 with user 'openstack_citest' and password 'openstack_citest' on localhost. The
-test will then use that db and u/p combo to run the tests.
-
-For postgres on Ubuntu this can be done with the following commands::
-
-| sudo -u postgres psql
-| postgres=# create user openstack_citest with createdb login password
-|       'openstack_citest';
-| postgres=# create database openstack_citest with owner openstack_citest;
-
+test will then use that DB and username/password combo to run the tests. Refer
+to the 'tools/test-setup.sh' for an example of how to configure this.
 """
 
 from alembic import command as alembic_api
@@ -36,6 +29,7 @@ from oslo_db.sqlalchemy import enginefacade
 from oslo_db.sqlalchemy import test_fixtures
 from oslo_db.sqlalchemy import test_migrations
 from oslo_log import log as logging
+import sqlalchemy
 import testtools
 
 from nova.db.api import models
@@ -47,6 +41,10 @@ LOG = logging.getLogger(__name__)
 
 class NovaModelsMigrationsSync(test_migrations.ModelsMigrationsSync):
     """Test that the models match the database after migrations are run."""
+
+    # Migrations can take a long time, particularly on underpowered CI nodes.
+    # Give them some breathing room.
+    TIMEOUT_SCALING_FACTOR = 4
 
     def setUp(self):
         super().setUp()
@@ -69,29 +67,16 @@ class NovaModelsMigrationsSync(test_migrations.ModelsMigrationsSync):
             if name == 'migrate_version':
                 return False
 
+            # Define a whitelist of tables that will be removed from the DB in
+            # a later release and don't have a corresponding model anymore.
+
+            return name not in models.REMOVED_TABLES
+
         return True
 
     def filter_metadata_diff(self, diff):
         # Filter out diffs that shouldn't cause a sync failure.
         new_diff = []
-
-        # Define a whitelist of ForeignKeys that exist on the model but not in
-        # the database. They will be removed from the model at a later time.
-        fkey_whitelist = {'build_requests': ['request_spec_id']}
-
-        # Define a whitelist of columns that will be removed from the
-        # DB at a later release and aren't on a model anymore.
-
-        column_whitelist = {
-            'build_requests': [
-                'vm_state', 'instance_metadata',
-                'display_name', 'access_ip_v6', 'access_ip_v4', 'key_name',
-                'locked_by', 'image_ref', 'progress', 'request_spec_id',
-                'info_cache', 'user_id', 'task_state', 'security_groups',
-                'config_drive',
-            ],
-            'resource_providers': ['can_host'],
-        }
 
         for element in diff:
             if isinstance(element, list):
@@ -104,18 +89,12 @@ class NovaModelsMigrationsSync(test_migrations.ModelsMigrationsSync):
                     fkey = element[1]
                     tablename = fkey.table.name
                     column_keys = fkey.column_keys
-                    if (
-                        tablename in fkey_whitelist and
-                        column_keys == fkey_whitelist[tablename]
-                    ):
+                    if (tablename, column_keys) in models.REMOVED_FKEYS:
                         continue
                 elif element[0] == 'remove_column':
-                    tablename = element[2]
-                    column = element[3]
-                    if (
-                        tablename in column_whitelist and
-                        column.name in column_whitelist[tablename]
-                    ):
+                    table = element[2]
+                    column = element[3].name
+                    if (table, column) in models.REMOVED_COLUMNS:
                         continue
 
                 new_diff.append(element)
@@ -192,14 +171,19 @@ class NovaMigrationsWalk(
     test_fixtures.OpportunisticDBTestMixin, test.NoDBTestCase,
 ):
 
+    # Migrations can take a long time, particularly on underpowered CI nodes.
+    # Give them some breathing room.
+    TIMEOUT_SCALING_FACTOR = 4
+
     def setUp(self):
         super().setUp()
         self.engine = enginefacade.writer.get_engine()
         self.config = migration._find_alembic_conf('api')
         self.init_version = migration.ALEMBIC_INIT_VERSION['api']
 
-    def _migrate_up(self, revision):
+    def _migrate_up(self, connection, revision):
         if revision == self.init_version:  # no tests for the initial revision
+            alembic_api.upgrade(self.config, revision)
             return
 
         self.assertIsNotNone(
@@ -208,7 +192,50 @@ class NovaMigrationsWalk(
                 'API DB Migration %s does not have a test; you must add one'
             ) % revision,
         )
+
+        pre_upgrade = getattr(self, '_pre_upgrade_%s' % revision, None)
+        if pre_upgrade:
+            pre_upgrade(connection)
+
         alembic_api.upgrade(self.config, revision)
+
+        post_upgrade = getattr(self, '_check_%s' % revision, None)
+        if post_upgrade:
+            post_upgrade(connection)
+
+    _b30f573d3377_removed_columns = {
+        'access_ip_v4',
+        'access_ip_v6',
+        'config_drive',
+        'display_name',
+        'image_ref',
+        'info_cache',
+        'instance_metadata',
+        'key_name',
+        'locked_by',
+        'progress',
+        'request_spec_id',
+        'security_groups',
+        'task_state',
+        'user_id',
+        'vm_state',
+    }
+
+    def _pre_upgrade_b30f573d3377(self, connection):
+        # we use the inspector here rather than oslo_db.utils.column_exists,
+        # since the latter will create a new connection
+        inspector = sqlalchemy.inspect(connection)
+        columns = [x['name'] for x in inspector.get_columns('build_requests')]
+        for removed_column in self._b30f573d3377_removed_columns:
+            self.assertIn(removed_column, columns)
+
+    def _check_b30f573d3377(self, connection):
+        # we use the inspector here rather than oslo_db.utils.column_exists,
+        # since the latter will create a new connection
+        inspector = sqlalchemy.inspect(connection)
+        columns = [x['name'] for x in inspector.get_columns('build_requests')]
+        for removed_column in self._b30f573d3377_removed_columns:
+            self.assertNotIn(removed_column, columns)
 
     def test_single_base_revision(self):
         """Ensure we only have a single base revision.
@@ -236,17 +263,26 @@ class NovaMigrationsWalk(
         with self.engine.begin() as connection:
             self.config.attributes['connection'] = connection
             script = alembic_script.ScriptDirectory.from_config(self.config)
-            for revision_script in script.walk_revisions():
-                revision = revision_script.revision
+            revisions = [x.revision for x in script.walk_revisions()]
+
+            # for some reason, 'walk_revisions' gives us the revisions in
+            # reverse chronological order so we have to invert this
+            revisions.reverse()
+            self.assertEqual(revisions[0], self.init_version)
+
+            for revision in revisions:
                 LOG.info('Testing revision %s', revision)
-                self._migrate_up(revision)
+                self._migrate_up(connection, revision)
 
     def test_db_version_alembic(self):
-        migration.db_sync(database='api')
+        engine = enginefacade.writer.get_engine()
 
-        head = alembic_script.ScriptDirectory.from_config(
-            self.config).get_current_head()
-        self.assertEqual(head, migration.db_version(database='api'))
+        with mock.patch.object(migration, '_get_engine', return_value=engine):
+            migration.db_sync(database='api')
+
+            script = alembic_script.ScriptDirectory.from_config(self.config)
+            head = script.get_current_head()
+            self.assertEqual(head, migration.db_version(database='api'))
 
 
 class TestMigrationsWalkSQLite(

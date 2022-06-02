@@ -45,10 +45,13 @@ def process(element, compiler, **kw):
 
 
 def _create_shadow_tables(migrate_engine):
-    meta = sa.MetaData(migrate_engine)
+    meta = sa.MetaData()
     meta.reflect(migrate_engine)
     table_names = list(meta.tables.keys())
 
+    # NOTE(stephenfin): This is not compatible with SQLAlchemy 2.0 but neither
+    # is sqlalchemy-migrate which requires this. We'll remove these migrations
+    # when dropping SQLAlchemy < 2.x support
     meta.bind = migrate_engine
 
     for table_name in table_names:
@@ -63,7 +66,7 @@ def _create_shadow_tables(migrate_engine):
         ):
             continue
 
-        table = sa.Table(table_name, meta, autoload=True)
+        table = sa.Table(table_name, meta, autoload_with=migrate_engine)
 
         columns = []
         for column in table.columns:
@@ -169,19 +172,24 @@ def _create_shadow_tables(migrate_engine):
     # 252_add_instance_extra_table; we don't create indexes for shadow tables
     # in general and these should be removed
 
-    table = sa.Table('shadow_instance_extra', meta, autoload=True)
+    table = sa.Table(
+        'shadow_instance_extra', meta, autoload_with=migrate_engine,
+    )
     idx = sa.Index('shadow_instance_extra_idx', table.c.instance_uuid)
     idx.create(migrate_engine)
 
     # 373_migration_uuid; we should't create indexes for shadow tables
 
-    table = sa.Table('shadow_migrations', meta, autoload=True)
+    table = sa.Table('shadow_migrations', meta, autoload_with=migrate_engine)
     idx = sa.Index('shadow_migrations_uuid', table.c.uuid, unique=True)
     idx.create(migrate_engine)
 
 
 def upgrade(migrate_engine):
     meta = sa.MetaData()
+    # NOTE(stephenfin): This is not compatible with SQLAlchemy 2.0 but neither
+    # is sqlalchemy-migrate which requires this. We'll remove these migrations
+    # when dropping SQLAlchemy < 2.x support
     meta.bind = migrate_engine
 
     agent_builds = sa.Table('agent_builds', meta,
@@ -1572,19 +1580,25 @@ def upgrade(migrate_engine):
 
     if migrate_engine.name == 'mysql':
         # In Folsom we explicitly converted migrate_version to UTF8.
-        migrate_engine.execute(
-            'ALTER TABLE migrate_version CONVERT TO CHARACTER SET utf8')
-        # Set default DB charset to UTF8.
-        migrate_engine.execute(
-            'ALTER DATABASE `%s` DEFAULT CHARACTER SET utf8' %
-            migrate_engine.url.database)
+        with migrate_engine.connect() as conn:
+            conn.exec_driver_sql(
+                'ALTER TABLE migrate_version CONVERT TO CHARACTER SET utf8'
+            )
+            # Set default DB charset to UTF8.
+            conn.exec_driver_sql(
+                'ALTER DATABASE `%s` DEFAULT CHARACTER SET utf8' % (
+                    migrate_engine.url.database,
+                )
+            )
 
-        # NOTE(cdent): The resource_providers table is defined as latin1 to be
-        # more efficient. Now we need the name column to be UTF8. We modify it
-        # here otherwise the declarative handling in sqlalchemy gets confused.
-        migrate_engine.execute(
-            'ALTER TABLE resource_providers MODIFY name '
-            'VARCHAR(200) CHARACTER SET utf8')
+            # NOTE(cdent): The resource_providers table is defined as latin1 to
+            # be more efficient. Now we need the name column to be UTF8. We
+            # modify it here otherwise the declarative handling in sqlalchemy
+            # gets confused.
+            conn.exec_driver_sql(
+                'ALTER TABLE resource_providers MODIFY name '
+                'VARCHAR(200) CHARACTER SET utf8'
+            )
 
     _create_shadow_tables(migrate_engine)
 
@@ -1594,9 +1608,10 @@ def upgrade(migrate_engine):
     # also
 
     if migrate_engine.name == 'mysql':
-        # Use binary collation for extra specs table
-        migrate_engine.execute(
-            'ALTER TABLE instance_type_extra_specs '
-            'CONVERT TO CHARACTER SET utf8 '
-            'COLLATE utf8_bin'
-        )
+        with migrate_engine.connect() as conn:
+            # Use binary collation for extra specs table
+            conn.exec_driver_sql(
+                'ALTER TABLE instance_type_extra_specs '
+                'CONVERT TO CHARACTER SET utf8 '
+                'COLLATE utf8_bin'
+            )

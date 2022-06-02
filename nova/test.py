@@ -177,6 +177,9 @@ class TestCase(base.BaseTestCase):
         with fixtures.EnvironmentVariable('OS_LOG_CAPTURE', '0'):
             super(TestCase, self).setUp()
 
+        self.useFixture(
+            nova_fixtures.PropagateTestCaseIdToChildEventlets(self.id()))
+
         # How many of which service we've started. {$service-name: $count}
         self._service_fixture_count = collections.defaultdict(int)
 
@@ -385,7 +388,7 @@ class TestCase(base.BaseTestCase):
             engine = db_api.get_engine()
         dialect = engine.url.get_dialect()
         if dialect == sqlite.dialect:
-            engine.connect().execute("PRAGMA foreign_keys = ON")
+            engine.connect().exec_driver_sql("PRAGMA foreign_keys = ON")
 
     def start_service(self, name, host=None, cell_name=None, **kwargs):
         # Disallow starting multiple scheduler services
@@ -776,6 +779,7 @@ class MatchType(object):
             "world",
             MatchType(objects.KeyPair))
     """
+
     def __init__(self, wanttype):
         self.wanttype = wanttype
 
@@ -791,6 +795,7 @@ class MatchType(object):
 
 class MatchObjPrims(object):
     """Matches objects with equal primitives."""
+
     def __init__(self, want_obj):
         self.want_obj = want_obj
 
@@ -820,6 +825,7 @@ class ContainKeyValue(object):
             "world",
             ContainKeyValue('hello', world))
     """
+
     def __init__(self, wantkey, wantvalue):
         self.wantkey = wantkey
         self.wantvalue = wantvalue

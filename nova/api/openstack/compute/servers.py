@@ -68,7 +68,6 @@ INVALID_FLAVOR_IMAGE_EXCEPTIONS = (
     exception.ImageNUMATopologyIncomplete,
     exception.ImageNUMATopologyMemoryOutOfRange,
     exception.ImageNUMATopologyRebuildConflict,
-    exception.ImagePMUConflict,
     exception.ImageSerialPortNumberExceedFlavorValue,
     exception.ImageSerialPortNumberInvalid,
     exception.ImageVCPULimitsRangeExceeded,
@@ -409,6 +408,7 @@ class ServersController(wsgi.Controller):
 
         networks = []
         network_uuids = []
+        port_uuids = []
         for network in requested_networks:
             request = objects.NetworkRequest()
             try:
@@ -417,18 +417,31 @@ class ServersController(wsgi.Controller):
                 # it will use one of the available IP address from the network
                 request.address = network.get('fixed_ip', None)
                 request.port_id = network.get('port', None)
-
                 request.tag = network.get('tag', None)
 
                 if request.port_id:
-                    request.network_id = None
-                    if request.address is not None:
-                        msg = _("Specified Fixed IP '%(addr)s' cannot be used "
-                                "with port '%(port)s': the two cannot be "
-                                "specified together.") % {
-                                    "addr": request.address,
-                                    "port": request.port_id}
+                    if request.port_id in port_uuids:
+                        msg = _(
+                            "Port ID '%(port)s' was specified twice: you "
+                            "cannot attach a port multiple times."
+                        ) % {
+                            "port": request.port_id,
+                        }
                         raise exc.HTTPBadRequest(explanation=msg)
+
+                    if request.address is not None:
+                        msg = _(
+                            "Specified Fixed IP '%(addr)s' cannot be used "
+                            "with port '%(port)s': the two cannot be "
+                            "specified together."
+                        ) % {
+                            "addr": request.address,
+                            "port": request.port_id,
+                        }
+                        raise exc.HTTPBadRequest(explanation=msg)
+
+                    request.network_id = None
+                    port_uuids.append(request.port_id)
                 else:
                     request.network_id = network['uuid']
                     self._validate_network_id(
@@ -783,8 +796,7 @@ class ServersController(wsgi.Controller):
                 supports_multiattach=supports_multiattach,
                 supports_port_resource_request=supports_port_resource_request,
                 **create_kwargs)
-        except (exception.QuotaError,
-                exception.PortLimitExceeded) as error:
+        except exception.OverQuota as error:
             raise exc.HTTPForbidden(
                 explanation=error.format_message())
         except exception.ImageNotFound:
@@ -848,6 +860,7 @@ class ServersController(wsgi.Controller):
                 exception.DeviceProfileError,
                 exception.ComputeHostNotFound,
                 exception.ForbiddenPortsWithAccelerator,
+                exception.ForbiddenWithRemoteManagedPorts,
                 exception.ExtendedResourceRequestOldCompute,
                 ) as error:
             raise exc.HTTPBadRequest(explanation=error.format_message())
@@ -1039,7 +1052,7 @@ class ServersController(wsgi.Controller):
         try:
             self.compute_api.resize(context, instance, flavor_id,
                                     auto_disk_config=auto_disk_config)
-        except exception.QuotaError as error:
+        except exception.OverQuota as error:
             raise exc.HTTPForbidden(
                 explanation=error.format_message())
         except (
@@ -1223,7 +1236,7 @@ class ServersController(wsgi.Controller):
         except exception.KeypairNotFound:
             msg = _("Invalid key_name provided.")
             raise exc.HTTPBadRequest(explanation=msg)
-        except exception.QuotaError as error:
+        except exception.OverQuota as error:
             raise exc.HTTPForbidden(explanation=error.format_message())
         except (exception.AutoDiskConfigDisabledByImage,
                 exception.CertificateValidationFailed,

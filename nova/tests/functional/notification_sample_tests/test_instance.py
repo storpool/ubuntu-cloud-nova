@@ -679,7 +679,6 @@ class TestInstanceNotificationSample(
              'state_update.old_state': 'active',
              'state': 'active',
              'task_state': 'deleting',
-             'bandwidth': [],
              'tags': ["tag1"],
              'block_devices': [{
                 "nova_object.data": {
@@ -705,7 +704,6 @@ class TestInstanceNotificationSample(
              'terminated_at': '2012-10-29T13:42:11Z',
              'ip_addresses': [],
              'power_state': 'pending',
-             'bandwidth': [],
              'tags': ["tag1"],
              'block_devices': [{
                 "nova_object.data": {
@@ -1233,7 +1231,7 @@ class TestInstanceNotificationSample(
                     'nova_object.data': {},
                     'nova_object.name': 'ImageMetaPropsPayload',
                     'nova_object.namespace': 'nova',
-                    'nova_object.version': '1.8',
+                    'nova_object.version': '1.9',
                 },
                 'image.size': 58145823,
                 'image.tags': [],
@@ -1329,7 +1327,7 @@ class TestInstanceNotificationSample(
                     'nova_object.data': {},
                     'nova_object.name': 'ImageMetaPropsPayload',
                     'nova_object.namespace': 'nova',
-                    'nova_object.version': '1.8',
+                    'nova_object.version': '1.9',
                 },
                 'image.size': 58145823,
                 'image.tags': [],

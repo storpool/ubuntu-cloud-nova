@@ -177,13 +177,14 @@ class TestDatabaseArchive(integrated_helpers._IntegratedTestBase):
     def _get_table_counts(self):
         engine = db.get_engine()
         conn = engine.connect()
-        meta = sa.MetaData(engine)
-        meta.reflect()
+        meta = sa.MetaData()
+        meta.reflect(bind=engine)
         shadow_tables = db._purgeable_tables(meta)
         results = {}
         for table in shadow_tables:
             r = conn.execute(
-                sa.select([func.count()]).select_from(table)).fetchone()
+                sa.select(func.count()).select_from(table)
+            ).fetchone()
             results[table.name] = r[0]
         return results
 
