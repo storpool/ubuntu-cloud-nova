@@ -1,3 +1,9 @@
+nova (3:24.1.1-0ubuntu1~cloud0) focal-xena; urgency=medium
+
+  * New stable point release for OpenStack Xena (LP: #1980367).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Tue, 05 Jul 2022 11:39:51 -0400
+
 nova (3:24.1.0-0ubuntu2~cloud0) focal-xena; urgency=medium
 
   * New upstream release for the Ubuntu Cloud Archive.
