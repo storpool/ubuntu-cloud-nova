@@ -35,7 +35,10 @@ if [ "$1" = "configure" ]; then
 
     # NOTE: file ownership changes from nova -> libvirt-qemu -> root
     #       as part of VM lifecycle so 0750 and 0640 are not suitable.
-    find /var/lib/nova -type f -exec chmod 0644 "{}" + -o -type d -exec chmod 0755 "{}" +
+    # NOTE: /var/lib/nova/.ssh/ and its files aren't created by the package,
+    #       therefore don't change their mode.
+    find /var/lib/nova -type f -not -wholename '/var/lib/nova/.ssh/*' -exec chmod 0644 "{}" \
+        + -o -type d  -not -wholename '/var/lib/nova/.ssh' -exec chmod 0755 "{}" +
     # NOTE: console.log files are always owned by root due to the way
     #       they get written to disk with limited permissions
     find /var/lib/nova -name "console.log" -exec chmod 0600 "{}" +
