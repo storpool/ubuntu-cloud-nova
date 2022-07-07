@@ -1,6 +1,24 @@
 CHANGES
 =======
 
+25.0.1
+------
+
+* Add missing condition
+* Retry in CellDatabases fixture when global DB state changes
+* Allow claiming PCI PF if child VF is unavailable
+* Simulate bug 1969496
+* Remove unavailable but not reported PCI devices at startup
+* Isolate PCI tracker unit tests
+* Fix segment-aware scheduling permissions error
+* [CI] Install dependencies for docs target
+* Fix pre\_live\_migration rollback
+* Adds regression test for bug LP#1944619
+* [stable-only] Drop lower-constraints job
+* Fix eventlet.tpool import
+* [stable-only] Update TOX\_CONSTRAINTS\_FILE for stable/yoga
+* [stable-only] Update .gitreview for stable/yoga
+
 25.0.0
 ------
 
