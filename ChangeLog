@@ -1,6 +1,30 @@
 CHANGES
 =======
 
+24.1.0
+------
+
+* libvirt: Add announce-self post live-migration workaround
+* skip test\_tagged\_attachment in nova-next
+* Migrate RequestSpec.numa\_topology to use pcpuset
+* Reproduce bug 1952941
+* api: Reject duplicate port IDs in server create
+* Update centos 8 py36 functional job nodeset to centos stream 8
+* [rt] Apply migration context for incoming migrations
+* Extend the reproducer for 1953359 and 1952915
+* Reproduce bug 1953359
+* Retry image download if it's corrupted
+* Add a WA flag waiting for vif-plugged event during reboot
+* Define new functional test tox env for placement gate to run
+* Clean up allocations left by evacuation when deleting service
+* Ensure MAC addresses characters are in the same case
+* Avoid unbound instance\_uuid var during delete
+* Prevent leaked eventlets to send notifications
+* Query ports with admin client to get resource\_request
+* Reproduce bug 1945310
+* Store old\_flavor already on source host during resize
+* Reproduce bug 1944759
+
 24.0.0
 ------
 

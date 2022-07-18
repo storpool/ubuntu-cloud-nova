@@ -3817,11 +3817,32 @@ class LibvirtDriver(driver.ComputeDriver):
         # on which vif type we're using and we are working with a stale network
         # info cache here, so won't rely on waiting for neutron plug events.
         # vifs_already_plugged=True means "do not wait for neutron plug events"
+        external_events = []
+        vifs_already_plugged = True
+        event_expected_for_vnic_types = (
+            CONF.workarounds.wait_for_vif_plugged_event_during_hard_reboot)
+        if event_expected_for_vnic_types:
+            # NOTE(gibi): We unplugged every vif during destroy above and we
+            # will replug them with _create_guest_with_network. As the
+            # workaround config has some vnic_types configured we expect
+            # vif-plugged events for every vif with those vnic_types.
+            # TODO(gibi): only wait for events if we know that the networking
+            # backend sends plug time events. For that we need to finish
+            # https://bugs.launchpad.net/neutron/+bug/1821058 first in Neutron
+            # then create a driver -> plug-time event mapping in nova.
+            external_events = [
+                ('network-vif-plugged', vif['id'])
+                for vif in network_info
+                if vif['vnic_type'] in event_expected_for_vnic_types
+            ]
+            vifs_already_plugged = False
+
         # NOTE(efried): The instance should already have a vtpm_secret_uuid
         # registered if appropriate.
         self._create_guest_with_network(
             context, xml, instance, network_info, block_device_info,
-            vifs_already_plugged=True)
+            vifs_already_plugged=vifs_already_plugged,
+            external_events=external_events)
 
         def _wait_for_reboot():
             """Called at an interval until the VM is running again."""
@@ -7207,7 +7228,7 @@ class LibvirtDriver(driver.ComputeDriver):
         power_on: bool = True,
         vifs_already_plugged: bool = False,
         post_xml_callback: ty.Callable = None,
-        external_events: ty.Optional[ty.List[str]] = None,
+        external_events: ty.Optional[ty.List[ty.Tuple[str, str]]] = None,
         cleanup_instance_dir: bool = False,
         cleanup_instance_disks: bool = False,
     ) -> libvirt_guest.Guest:
@@ -10489,6 +10510,26 @@ class LibvirtDriver(driver.ComputeDriver):
         """
         self.unplug_vifs(instance, network_info)
 
+    def _qemu_monitor_announce_self(self, instance):
+        """Send announce_self command to QEMU monitor.
+
+        This is to trigger generation of broadcast RARP frames to
+        update network switches. This is best effort.
+        """
+        if not CONF.workarounds.enable_qemu_monitor_announce_self:
+            return
+
+        LOG.info('Sending announce-self command to QEMU monitor',
+                 instance=instance)
+
+        try:
+            guest = self._host.get_guest(instance)
+            guest.announce_self()
+        except Exception:
+            LOG.warning('Failed to send announce-self command to QEMU monitor',
+                        instance=instance)
+            LOG.exception()
+
     def post_live_migration_at_destination(self, context,
                                            instance,
                                            network_info,
@@ -10504,6 +10545,7 @@ class LibvirtDriver(driver.ComputeDriver):
         :param block_migration: if true, post operation of block_migration.
         """
         self._reattach_instance_vifs(context, instance, network_info)
+        self._qemu_monitor_announce_self(instance)
 
     def _get_instance_disk_info_from_config(self, guest_config,
                                             block_device_info):

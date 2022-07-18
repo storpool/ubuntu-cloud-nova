@@ -1629,6 +1629,34 @@ class _ComputeAPIUnitTestMixIn(object):
                 self.compute_api.notifier, self.context, instance)
             destroy_mock.assert_called_once_with()
 
+    def test_delete_instance_while_booting_host_changes_lookup_fails(self):
+        """Tests the case where the instance become scheduled while being
+        destroyed but then the final lookup fails.
+        """
+        instance = self._create_instance_obj({'host': None})
+
+        with test.nested(
+            mock.patch.object(
+                self.compute_api, '_delete_while_booting',
+                side_effect=exception.ObjectActionError(
+                    action="delete", reason="reason")),
+            mock.patch.object(
+                self.compute_api, '_lookup_instance',
+                return_value=(None, None)),
+            mock.patch.object(self.compute_api, '_local_delete_cleanup')
+        ) as (
+            _delete_while_booting, _lookup_instance, _local_delete_cleanup
+        ):
+            self.compute_api._delete(
+                self.context, instance, 'delete', mock.NonCallableMock())
+
+            _delete_while_booting.assert_called_once_with(
+                self.context, instance)
+            _lookup_instance.assert_called_once_with(
+                self.context, instance.uuid)
+            _local_delete_cleanup.assert_called_once_with(
+                self.context, instance.uuid)
+
     @mock.patch.object(context, 'target_cell')
     @mock.patch.object(objects.InstanceMapping, 'get_by_instance_uuid',
                        side_effect=exception.InstanceMappingNotFound(
@@ -7268,6 +7296,10 @@ class ComputeAPIUnitTestCase(_ComputeAPIUnitTestMixIn, test.NoDBTestCase):
             self.context, instance, instance_actions.ATTACH_INTERFACE)
 
     @mock.patch(
+        'nova.context.RequestContext.elevated',
+        new=mock.Mock(return_value=mock.sentinel.admin_context)
+    )
+    @mock.patch(
         'nova.network.neutron.API.has_extended_resource_request_extension',
         new=mock.Mock(return_value=False),
     )
@@ -7292,10 +7324,15 @@ class ComputeAPIUnitTestCase(_ComputeAPIUnitTestMixIn, test.NoDBTestCase):
                 self.context, instance,
                 'foo_net_id', 'foo_port_id', None
             )
-        mock_show_port.assert_called_once_with(self.context, 'foo_port_id')
+        mock_show_port.assert_called_once_with(
+            mock.sentinel.admin_context, 'foo_port_id')
         mock_get_service.assert_called_once_with(
             self.context, instance.host, 'nova-compute')
 
+    @mock.patch(
+        'nova.context.RequestContext.elevated',
+        new=mock.Mock(return_value=mock.sentinel.admin_context)
+    )
     @mock.patch(
         'nova.network.neutron.API.has_extended_resource_request_extension',
         new=mock.Mock(return_value=False)
@@ -7326,7 +7363,7 @@ class ComputeAPIUnitTestCase(_ComputeAPIUnitTestMixIn, test.NoDBTestCase):
                 mock.sentinel.port_id, mock.sentinel.ip, mock.sentinel.tag)
 
         mock_show_port.assert_called_once_with(
-            self.context, mock.sentinel.port_id)
+            mock.sentinel.admin_context, mock.sentinel.port_id)
         mock_get_service.assert_called_once_with(
             self.context, instance.host, 'nova-compute')
         mock_attach.assert_called_once_with(
@@ -7334,6 +7371,10 @@ class ComputeAPIUnitTestCase(_ComputeAPIUnitTestMixIn, test.NoDBTestCase):
             port_id=mock.sentinel.port_id, requested_ip=mock.sentinel.ip,
             tag=mock.sentinel.tag)
 
+    @mock.patch(
+        'nova.context.RequestContext.elevated',
+        new=mock.Mock(return_value=mock.sentinel.admin_context)
+    )
     @mock.patch(
         'nova.network.neutron.API.has_extended_resource_request_extension',
         new=mock.Mock(return_value=True),
@@ -7367,10 +7408,15 @@ class ComputeAPIUnitTestCase(_ComputeAPIUnitTestMixIn, test.NoDBTestCase):
                 self.context, instance,
                 'foo_net_id', 'foo_port_id', None
             )
-        mock_show_port.assert_called_once_with(self.context, 'foo_port_id')
+        mock_show_port.assert_called_once_with(
+            mock.sentinel.admin_context, 'foo_port_id')
         mock_get_service.assert_called_once_with(
             self.context, instance.host, 'nova-compute')
 
+    @mock.patch(
+        'nova.context.RequestContext.elevated',
+        new=mock.Mock(return_value=mock.sentinel.admin_context)
+    )
     @mock.patch(
         'nova.network.neutron.API.has_extended_resource_request_extension',
         new=mock.Mock(return_value=True)
@@ -7404,7 +7450,7 @@ class ComputeAPIUnitTestCase(_ComputeAPIUnitTestMixIn, test.NoDBTestCase):
                 mock.sentinel.port_id, mock.sentinel.ip, mock.sentinel.tag)
 
         mock_show_port.assert_called_once_with(
-            self.context, mock.sentinel.port_id)
+            mock.sentinel.admin_context, mock.sentinel.port_id)
         mock_get_service.assert_called_once_with(
             self.context, instance.host, 'nova-compute')
         mock_attach.assert_called_once_with(
