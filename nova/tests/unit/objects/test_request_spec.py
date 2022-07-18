@@ -615,6 +615,44 @@ class _TestRequestSpecObject(object):
         self.assertIsInstance(req_obj.instance_group, objects.InstanceGroup)
         self.assertEqual('fresh', req_obj.instance_group.name)
 
+    @mock.patch('nova.objects.request_spec.RequestSpec.save')
+    @mock.patch.object(
+        request_spec.RequestSpec, '_get_by_instance_uuid_from_db')
+    @mock.patch('nova.objects.InstanceGroup.get_by_uuid')
+    def test_get_by_instance_uuid_numa_topology_migration(
+        self, mock_get_ig, get_by_uuid, mock_save
+    ):
+        # Simulate a pre-Victoria RequestSpec where the pcpuset field is not
+        # defined for the embedded InstanceNUMACell objects but the cpu_policy
+        # is dedicated meaning that cores in cpuset defines pinned cpus. So
+        # in Victoria or later these InstanceNUMACell objects should be
+        # translated to hold the cores in the pcpuset field instead.
+        numa_topology = objects.InstanceNUMATopology(
+            instance_uuid=uuids.instance_uuid,
+            cells=[
+                objects.InstanceNUMACell(
+                    id=0, cpuset={1, 2}, memory=512, cpu_policy="dedicated"),
+                objects.InstanceNUMACell(
+                    id=1, cpuset={3, 4}, memory=512, cpu_policy="dedicated"),
+            ]
+        )
+        spec_obj = fake_request_spec.fake_spec_obj()
+        spec_obj.numa_topology = numa_topology
+        fake_spec = fake_request_spec.fake_db_spec(spec_obj)
+        fake_spec['instance_uuid'] = uuids.instance_uuid
+
+        get_by_uuid.return_value = fake_spec
+        mock_get_ig.return_value = objects.InstanceGroup(name='fresh')
+
+        req_obj = request_spec.RequestSpec.get_by_instance_uuid(
+            self.context, fake_spec['instance_uuid'])
+
+        self.assertEqual(2, len(req_obj.numa_topology.cells))
+        self.assertEqual({1, 2}, req_obj.numa_topology.cells[0].pcpuset)
+        self.assertEqual({3, 4}, req_obj.numa_topology.cells[1].pcpuset)
+
+        mock_save.assert_called_once()
+
     def _check_update_primitive(self, req_obj, changes):
         self.assertEqual(req_obj.instance_uuid, changes['instance_uuid'])
         serialized_obj = objects.RequestSpec.obj_from_primitive(

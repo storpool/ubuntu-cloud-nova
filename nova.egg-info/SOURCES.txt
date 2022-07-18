@@ -3436,6 +3436,7 @@ releasenotes/notes/allow-disabling-cpu-flags-cc861a3bdfffadf8.yaml
 releasenotes/notes/allow-non-admin-filter-instance-more-filter-ea5abad7c32ff328.yaml
 releasenotes/notes/allow-reserved-equal-total-inventory-fe93584dd28c460d.yaml
 releasenotes/notes/always-set-dhcp-server-if-enable-dhcp-b96bf720af235902.yaml
+releasenotes/notes/announce-self-post-live-migration-936721b1ab887514.yaml
 releasenotes/notes/api-consistency-cleanup-700b260ced206d92.yaml
 releasenotes/notes/api-database-now-required-6245f39d36885d1c.yaml
 releasenotes/notes/api.fault-notification-removal-9f3142ba7cb13ca9.yaml
@@ -3578,8 +3579,10 @@ releasenotes/notes/bug-1803627-cinder-catalog-info-service-name-optional-fa673ad
 releasenotes/notes/bug-1811726-multi-node-delete-2ba17f02c6171fbb.yaml
 releasenotes/notes/bug-1815791-f84a913eef9e3b21.yaml
 releasenotes/notes/bug-1816686-77060eb8f8bd4092.yaml
+releasenotes/notes/bug-1821088-reject-duplicate-port-ids-a38739d67d5d7c5d.yaml
 releasenotes/notes/bug-1821755-7bd03319e34b6b10.yaml
 releasenotes/notes/bug-1824813-4441265dc805e792.yaml
+releasenotes/notes/bug-1829479-cd2db21526965e6d.yaml
 releasenotes/notes/bug-1834048-8b19ae1c5048b801.yaml
 releasenotes/notes/bug-1834506-7c6875bbdc32ab0b.yaml
 releasenotes/notes/bug-1837877-cve-fault-message-exposure-5360d794f4976b7c.yaml
@@ -3613,7 +3616,10 @@ releasenotes/notes/bug-1894966-d25c12b1320cb910.yaml
 releasenotes/notes/bug-1910466-max-vcpu-topologies-with-numa-9a9ceb1b0fc7c33d.yaml
 releasenotes/notes/bug-1911924-6e93d8a5038d18c1.yaml
 releasenotes/notes/bug-1939604-547c729b7741831b.yaml
+releasenotes/notes/bug-1946729-wait-for-vif-plugged-event-during-hard-reboot-fb491f6a68370bab.yaml
+releasenotes/notes/bug-1952941-request-spec-numa-topology-migration-c97dbd51b3c6c116.yaml
 releasenotes/notes/bug-hyperv-1629040-e1eb35a7b31d9af8.yaml
+releasenotes/notes/bug-retry-corrupted-download-5798b0df44a00e4e.yaml
 releasenotes/notes/bug-volume-attach-policy-1635358-671ce4d4ee8c211b.yaml
 releasenotes/notes/bug_1659328-73686be497f5f85a.yaml
 releasenotes/notes/bug_1902925-351f563340a1e9a5.yaml
