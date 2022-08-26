@@ -117,7 +117,7 @@ Last-Update: 2021-10-11
                              <source file="/path/to/fake-volume"/>
                              <target bus="virtio" dev="vdc"/>
                          </disk>"""
-@@ -28354,6 +28357,7 @@
+@@ -28412,6 +28415,7 @@
                <os>
                  <type>hvm</type>
                </os>

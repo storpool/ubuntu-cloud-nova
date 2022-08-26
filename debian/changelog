@@ -1,3 +1,16 @@
+nova (3:24.1.1-0ubuntu1~cloud0+0~0~0.sp1) focal-xena; urgency=medium
+
+  * Merge the hardcode-libvirt-domain-iothread patch and refresh
+    its line numbers.
+
+ -- Peter Penchev <openstack-dev@storpool.com>  Fri, 26 Aug 2022 11:16:48 +0300
+
+nova (3:24.1.1-0ubuntu1~cloud0) focal-xena; urgency=medium
+
+  * New stable point release for OpenStack Xena (LP: #1980367).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Tue, 05 Jul 2022 11:39:51 -0400
+
 nova (3:24.1.0-0ubuntu2~cloud0+0~0~0.sp1) focal-xena; urgency=medium
 
   * Merge the hardcode-libvirt-domain-iothread patch.
