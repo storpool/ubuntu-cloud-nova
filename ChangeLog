@@ -1,18 +1,39 @@
 CHANGES
 =======
 
+24.1.1
+------
+
+* Add missing condition
+* Add service version check workaround for FFU
+* Fix pre\_live\_migration rollback
+* Adds regression test for bug LP#1944619
+* Fix eventlet.tpool import
+* [CI] Install dependencies for docs target
+* [stable-only] Drop lower-constraints job
+* Clean up when queued live migration aborted
+* Add functional tests to reproduce bug #1960412
+* Test aborting queued live migration
+* Cleanup old resize instances dir before resize
+* [stable-only] Set nova-tox-functional-centos8-py36 non-voting
+
 24.1.0
 ------
 
+* Gracefull recovery when attaching volume fails
 * libvirt: Add announce-self post live-migration workaround
+* Revert "Revert resize: wait for events according to hybrid plug"
+* Add nova-ovs-hybrid-plug job
 * skip test\_tagged\_attachment in nova-next
 * Migrate RequestSpec.numa\_topology to use pcpuset
 * Reproduce bug 1952941
 * api: Reject duplicate port IDs in server create
 * Update centos 8 py36 functional job nodeset to centos stream 8
+* Reattach mdevs to guest on resume
 * [rt] Apply migration context for incoming migrations
 * Extend the reproducer for 1953359 and 1952915
 * Reproduce bug 1953359
+* Ignore plug\_vifs on the ironic driver
 * Retry image download if it's corrupted
 * Add a WA flag waiting for vif-plugged event during reboot
 * Define new functional test tox env for placement gate to run

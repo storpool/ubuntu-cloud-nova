@@ -16604,9 +16604,15 @@ class LibvirtConnTestCase(test.NoDBTestCase,
             mock.patch.object(guest, 'sync_guest_time'),
             mock.patch.object(drvr, '_wait_for_running',
                               side_effect=loopingcall.LoopingCallDone()),
+            mock.patch.object(drvr,
+                              '_get_mdevs_from_guest_config',
+                              return_value='fake_mdevs'),
+            mock.patch.object(drvr, '_attach_mediated_devices'),
         ) as (_get_existing_domain_xml, _create_guest_with_network,
               _attach_pci_devices, get_instance_pci_devs, get_image_metadata,
-              mock_sync_time, mock_wait):
+              mock_sync_time, mock_wait,
+              _get_mdevs_from_guest_config,
+              _attach_mediated_devices):
             get_image_metadata.return_value = {'bar': 234}
 
             drvr.resume(self.context, instance, network_info,
@@ -16621,6 +16627,9 @@ class LibvirtConnTestCase(test.NoDBTestCase,
             self.assertTrue(mock_sync_time.called)
             _attach_pci_devices.assert_has_calls([mock.call(guest,
                                                  'fake_pci_devs')])
+            _attach_mediated_devices.assert_has_calls(
+                [mock.call(guest, 'fake_mdevs')]
+            )
 
     @mock.patch.object(host.Host, '_get_domain')
     @mock.patch.object(libvirt_driver.LibvirtDriver, 'get_info')
@@ -19152,10 +19161,9 @@ class LibvirtConnTestCase(test.NoDBTestCase,
             self.assertEqual(0, domain.resume.call_count)
 
     def _test_create_guest_with_network__events(
-        self, neutron_failure=None, power_on=True, events=None,
+        self, neutron_failure=None, power_on=True,
     ):
         generated_events = []
-        events_passed_to_prepare = []
 
         def wait_timeout():
             event = mock.MagicMock()
@@ -19173,7 +19181,6 @@ class LibvirtConnTestCase(test.NoDBTestCase,
             m.event_name = '%s-%s' % (name, tag)
             m.wait.side_effect = wait_timeout
             generated_events.append(m)
-            events_passed_to_prepare.append((name, tag))
             return m
 
         virtapi = manager.ComputeVirtAPI(mock.MagicMock())
@@ -19192,8 +19199,7 @@ class LibvirtConnTestCase(test.NoDBTestCase,
         def test_create(cleanup, create, plug_vifs):
             domain = drvr._create_guest_with_network(self.context, 'xml',
                                                      instance, vifs, None,
-                                                     power_on=power_on,
-                                                     external_events=events)
+                                                     power_on=power_on)
             plug_vifs.assert_called_with(instance, vifs)
 
             pause = self._get_pause_flag(drvr, vifs, power_on=power_on)
@@ -19208,9 +19214,7 @@ class LibvirtConnTestCase(test.NoDBTestCase,
 
         test_create()
 
-        if events and CONF.vif_plugging_timeout:
-            self.assertEqual(events_passed_to_prepare, events)
-        elif CONF.vif_plugging_timeout and power_on:
+        if CONF.vif_plugging_timeout and power_on:
             prepare.assert_has_calls([
                 mock.call(instance, 'network-vif-plugged', uuids.vif_1),
                 mock.call(instance, 'network-vif-plugged', uuids.vif_2)])
@@ -19225,15 +19229,6 @@ class LibvirtConnTestCase(test.NoDBTestCase,
 
     def test_create_guest_with_network__events_neutron(self):
         self._test_create_guest_with_network__events()
-
-    def test_create_guest_with_network__events_passed_in(self):
-        self._test_create_guest_with_network__events(
-            events=[('network-vif-plugged', uuids.fake_vif)])
-
-    def test_create_guest_with_network__events_passed_in_0_timeout(self):
-        self.flags(vif_plugging_timeout=0)
-        self._test_create_guest_with_network__events(
-            events=[('network-vif-plugged', uuids.fake_vif)])
 
     def test_create_guest_with_network_events_neutron_power_off(self):
         # Tests that we don't wait for events if we don't start the instance.
@@ -21525,6 +21520,8 @@ class LibvirtDriverTestCase(test.NoDBTestCase, TraitsComparisonMixin):
                           context.get_admin_context(), ins_ref, '10.0.0.2',
                           flavor_obj, None)
 
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver.'
+                '_cleanup_failed_instance_base')
     @mock.patch('nova.virt.libvirt.driver.LibvirtDriver.unplug_vifs')
     @mock.patch('nova.virt.libvirt.utils.save_and_migrate_vtpm_dir')
     @mock.patch('nova.virt.libvirt.driver.LibvirtDriver.'
@@ -21541,7 +21538,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase, TraitsComparisonMixin):
             self, ctxt, flavor_obj, mock_execute, mock_exists, mock_rename,
             mock_is_shared, mock_get_host_ip, mock_destroy,
             mock_get_disk_info, mock_vtpm, mock_unplug_vifs,
-            block_device_info=None, params_for_instance=None):
+            mock_cleanup, block_device_info=None, params_for_instance=None):
         """Test for nova.virt.libvirt.driver.LivirtConnection
         .migrate_disk_and_power_off.
         """
@@ -21556,6 +21553,8 @@ class LibvirtDriverTestCase(test.NoDBTestCase, TraitsComparisonMixin):
                ctxt, instance, '10.0.0.2', flavor_obj, None,
                block_device_info=block_device_info)
 
+        mock_cleanup.assert_called_once()
+        mock_cleanup.reset_mock()
         self.assertEqual(out, disk_info_text)
         mock_vtpm.assert_called_with(
             instance.uuid, mock.ANY, mock.ANY, '10.0.0.2', mock.ANY, mock.ANY)
@@ -21566,6 +21565,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase, TraitsComparisonMixin):
                ctxt, instance, '10.0.0.1', flavor_obj, None,
                block_device_info=block_device_info)
 
+        mock_cleanup.assert_called_once()
         self.assertEqual(out, disk_info_text)
         mock_vtpm.assert_called_with(
             instance.uuid, mock.ANY, mock.ANY, '10.0.0.1', mock.ANY, mock.ANY)
@@ -22222,7 +22222,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase, TraitsComparisonMixin):
         mock_restore_vtpm.assert_not_called()
         mock_delete_vtpm.assert_not_called()
 
-    def _test_finish_revert_migration(self, power_on, migration):
+    def _test_finish_revert_migration(self, power_on):
         """Test for nova.virt.libvirt.libvirt_driver.LivirtConnection
         .finish_revert_migration.
         """
@@ -22239,14 +22239,11 @@ class LibvirtDriverTestCase(test.NoDBTestCase, TraitsComparisonMixin):
         def fake_create_guest_with_network(
             _self, context, xml, instance, network_info, block_device_info,
             power_on=None, vifs_already_plugged=None, post_xml_callback=None,
-            external_events=None, cleanup_instance_dir=False,
-            cleanup_instance_disks=False,
+            cleanup_instance_dir=False, cleanup_instance_disks=False,
         ):
             self.fake_create_guest_called = True
             self.assertEqual(powered_on, power_on)
             self.assertFalse(vifs_already_plugged)
-            self.assertEqual(self.events_passed_to_fake_create,
-                             external_events)
             return mock.MagicMock()
 
         def fake_get_info(self, instance):
@@ -22285,51 +22282,22 @@ class LibvirtDriverTestCase(test.NoDBTestCase, TraitsComparisonMixin):
             f = open(libvirt_xml_path, 'w')
             f.close()
 
-            network_info = network_model.NetworkInfo(
-                [network_model.VIF(id=uuids.normal_vif),
-                 network_model.VIF(id=uuids.hybrid_vif,
-                                   details={'ovs_hybrid_plug': True})])
-            if migration.is_same_host():
-                # Same host is all plug-time
-                self.events_passed_to_fake_create = [
-                    ('network-vif-plugged', uuids.normal_vif),
-                    ('network-vif-plugged', uuids.hybrid_vif)]
-            else:
-                # For different host migration only non-hybrid plug
-                # ("normal") VIFs "emit" plug-time events.
-                self.events_passed_to_fake_create = [
-                    ('network-vif-plugged', uuids.normal_vif)]
-
             with mock.patch.object(
                 self.drvr, '_get_all_assigned_mediated_devices',
                 return_value={}
             ) as mock_get_a_mdevs:
                 self.drvr.finish_revert_migration(
-                    self.context, instance, network_info, migration,
-                    power_on=power_on)
+                    self.context, instance, network_model.NetworkInfo(),
+                        objects.Migration(), power_on=power_on)
 
             self.assertTrue(self.fake_create_guest_called)
             mock_get_a_mdevs.assert_called_once_with(mock.ANY)
 
     def test_finish_revert_migration_power_on(self):
-        migration = objects.Migration(id=42, source_compute='fake-host1',
-                                      dest_compute='fake-host2')
-        self._test_finish_revert_migration(power_on=True, migration=migration)
+        self._test_finish_revert_migration(True)
 
     def test_finish_revert_migration_power_off(self):
-        migration = objects.Migration(id=42, source_compute='fake-host1',
-                                      dest_compute='fake-host2')
-        self._test_finish_revert_migration(power_on=False, migration=migration)
-
-    def test_finish_revert_migration_same_host(self):
-        migration = objects.Migration(id=42, source_compute='fake-host',
-                                      dest_compute='fake-host')
-        self._test_finish_revert_migration(power_on=True, migration=migration)
-
-    def test_finish_revert_migration_diff_host(self):
-        migration = objects.Migration(id=42, source_compute='fake-host1',
-                                      dest_compute='fake-host2')
-        self._test_finish_revert_migration(power_on=True, migration=migration)
+        self._test_finish_revert_migration(False)
 
     def _test_finish_revert_migration_after_crash(self, backup_made=True,
                                                   del_inst_failed=False):
@@ -22495,8 +22463,8 @@ class LibvirtDriverTestCase(test.NoDBTestCase, TraitsComparisonMixin):
             self.assertFalse(drvr.image_backend.remove_snap.called)
 
     @mock.patch.object(shutil, 'rmtree')
-    def test_cleanup_failed_migration(self, mock_rmtree):
-        self.drvr._cleanup_failed_migration('/fake/inst')
+    def test_cleanup_failed_instance_base(self, mock_rmtree):
+        self.drvr._cleanup_failed_instance_base('/fake/inst')
         mock_rmtree.assert_called_once_with('/fake/inst')
 
     @mock.patch.object(libvirt_driver.LibvirtDriver, '_cleanup_resize')
@@ -26113,6 +26081,55 @@ class LibvirtDriverTestCase(test.NoDBTestCase, TraitsComparisonMixin):
 
         self.assertRaises(test.TestingException,
                           self._test_detach_mediated_devices, exc)
+
+    @mock.patch.object(libvirt_guest.Guest, 'attach_device')
+    def _test_attach_mediated_devices(self, side_effect, attach_device):
+        dom_without_vgpu = (
+            """<domain> <devices>
+            <disk type='file' device='disk'>
+            <driver name='qemu' type='qcow2' cache='none'/>
+            <source file='xxx'/>
+            <target dev='vda' bus='virtio'/>
+            <alias name='virtio-disk0'/>
+            <address type='pci' domain='0x0000' bus='0x00'
+            slot='0x04' function='0x0'/>
+            </disk>
+            </devices></domain>""")
+
+        vgpu_xml = (
+            """<domain> <devices>
+            <hostdev mode='subsystem' type='mdev' managed='no'
+            model='vfio-pci'>
+             <source>
+              <address uuid='81db53c6-6659-42a0-a34c-1507fdc72983'/>
+             </source>
+             <alias name='hostdev0'/>
+             <address type='pci' domain='0x0000' bus='0x00' slot='0x05'
+             function='0x0'/>
+            </hostdev>
+            </devices></domain>""")
+
+        attach_device.side_effect = side_effect
+
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        guest = libvirt_guest.Guest(FakeVirtDomain(fake_xml=dom_without_vgpu))
+        mdevs = drvr._get_mdevs_from_guest_config(vgpu_xml)
+        drvr._attach_mediated_devices(guest, mdevs)
+        return attach_device
+
+    def test_attach_mediated_devices(self):
+        def fake_attach_device(cfg_obj, **kwargs):
+            self.assertIsInstance(cfg_obj,
+                                  vconfig.LibvirtConfigGuestHostdevMDEV)
+
+        attach_mock = self._test_attach_mediated_devices(fake_attach_device)
+        attach_mock.assert_called_once_with(mock.ANY, live=True)
+
+    def test_attach_mediated_devices_raises_exc(self):
+        exc = test.TestingException()
+
+        self.assertRaises(test.TestingException,
+                          self._test_attach_mediated_devices, exc)
 
     def test_storage_bus_traits__qemu_kvm(self):
         """Test getting storage bus traits per virt type.
