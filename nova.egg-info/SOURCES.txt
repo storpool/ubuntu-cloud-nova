@@ -11,7 +11,6 @@ LICENSE
 MAINTAINERS
 README.rst
 bindep.txt
-lower-constraints.txt
 mypy-files.txt
 requirements.txt
 setup.cfg
@@ -2689,6 +2688,7 @@ nova/tests/functional/regressions/test_bug_1937375.py
 nova/tests/functional/regressions/test_bug_1938326.py
 nova/tests/functional/regressions/test_bug_1939545.py
 nova/tests/functional/regressions/test_bug_1943431.py
+nova/tests/functional/regressions/test_bug_1944619.py
 nova/tests/functional/wsgi/__init__.py
 nova/tests/functional/wsgi/test_flavor_manage.py
 nova/tests/functional/wsgi/test_interfaces.py
@@ -3632,12 +3632,14 @@ releasenotes/notes/bug-1894966-d25c12b1320cb910.yaml
 releasenotes/notes/bug-1910466-max-vcpu-topologies-with-numa-9a9ceb1b0fc7c33d.yaml
 releasenotes/notes/bug-1911924-6e93d8a5038d18c1.yaml
 releasenotes/notes/bug-1939604-547c729b7741831b.yaml
+releasenotes/notes/bug-1944619-fix-live-migration-rollback.yaml
 releasenotes/notes/bug-1946729-wait-for-vif-plugged-event-during-hard-reboot-fb491f6a68370bab.yaml
 releasenotes/notes/bug-1948705-ff80ae392c525475.yaml
 releasenotes/notes/bug-1952941-request-spec-numa-topology-migration-c97dbd51b3c6c116.yaml
 releasenotes/notes/bug-1958636-smm-check-and-enable.yaml
 releasenotes/notes/bug-1960230-cleanup-instances-dir-resize-56282e1b436a4908.yaml
 releasenotes/notes/bug-1960401-504eb255253d966a.yaml
+releasenotes/notes/bug-1970383-segment-scheduling-permissions-92ba907b10a9eb1c.yaml
 releasenotes/notes/bug-hyperv-1629040-e1eb35a7b31d9af8.yaml
 releasenotes/notes/bug-retry-corrupted-download-5798b0df44a00e4e.yaml
 releasenotes/notes/bug-volume-attach-policy-1635358-671ce4d4ee8c211b.yaml
