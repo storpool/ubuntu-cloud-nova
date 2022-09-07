@@ -107,7 +107,7 @@ For Operators
 Architecture Overview
 ---------------------
 
-* :doc:`Nova architecture </user/architecture>`: An overview of how all the parts in
+* :doc:`Nova architecture </admin/architecture>`: An overview of how all the parts in
   nova fit together.
 
 .. # NOTE(amotoki): toctree needs to be placed at the end of the secion to
@@ -115,7 +115,7 @@ Architecture Overview
 .. toctree::
    :hidden:
 
-   user/architecture
+   admin/architecture
 
 Installation
 ------------
@@ -153,9 +153,10 @@ the defaults from the :doc:`install guide </install/index>` will be sufficient.
   * :doc:`Feature Support full list </user/support-matrix>`: A detailed dive through
     features in each compute driver backend.
 
-* :doc:`Cells v2 Planning </user/cellsv2-layout>`: For large deployments, Cells v2
-  allows sharding of your compute environment. Upfront planning is key to a
-  successful Cells v2 layout.
+* :doc:`Cells v2 configuration </admin/cells>`: For large deployments, cells v2
+  cells allow sharding of your compute environment. Upfront planning is key to
+  a successful cells v2 layout.
+
 * :doc:`Running nova-api on wsgi <user/wsgi>`: Considerations for using a real
   WSGI container instead of the baked-in eventlet web server.
 
@@ -166,7 +167,7 @@ the defaults from the :doc:`install guide </install/index>` will be sufficient.
 
    user/feature-classification
    user/support-matrix
-   user/cellsv2-layout
+   admin/cells
    user/wsgi
 
 Maintenance

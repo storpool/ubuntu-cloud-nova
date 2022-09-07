@@ -72,6 +72,7 @@ class VMwareVCDriver(driver.ComputeDriver):
         "supports_trusted_certs": False,
         "supports_pcpus": False,
         "supports_accelerators": False,
+        "supports_remote_managed_ports": False,
 
         # Image type support flags
         "supports_image_type_aki": False,
@@ -86,13 +87,6 @@ class VMwareVCDriver(driver.ComputeDriver):
         "supports_image_type_vmdk": True,
         "supports_image_type_ploop": False,
     }
-
-    # Legacy nodename is of the form: <mo id>(<cluster name>)
-    # e.g. domain-26(TestCluster)
-    # We assume <mo id> consists of alphanumeric, _ and -.
-    # We assume cluster name is everything between the first ( and the last ).
-    # We pull out <mo id> for re-use.
-    LEGACY_NODENAME = re.compile(r'([\w-]+)\(.+\)')
 
     # The vCenter driver includes API that acts on ESX hosts or groups
     # of ESX hosts in clusters or non-cluster logical-groupings.
@@ -724,6 +718,7 @@ class VMwareAPISession(api.VMwareAPISession):
     """Sets up a session with the VC/ESX host and handles all
     the calls made to the host.
     """
+
     def __init__(self, host_ip=CONF.vmware.host_ip,
                  host_port=CONF.vmware.host_port,
                  username=CONF.vmware.host_username,

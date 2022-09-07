@@ -968,7 +968,7 @@ doc/source/_static/images/vmware-nova-driver-architecture.jpg
 doc/source/_static/images/xenserver_architecture.png
 doc/source/admin/admin-password-injection.rst
 doc/source/admin/aggregates.rst
-doc/source/admin/arch.rst
+doc/source/admin/architecture.rst
 doc/source/admin/availability-zones.rst
 doc/source/admin/cells.rst
 doc/source/admin/config-drive.rst
@@ -981,6 +981,7 @@ doc/source/admin/evacuate.rst
 doc/source/admin/file-backed-memory.rst
 doc/source/admin/flavors.rst
 doc/source/admin/huge-pages.rst
+doc/source/admin/hw-emulation-architecture.rst
 doc/source/admin/hw-machine-type.rst
 doc/source/admin/image-caching.rst
 doc/source/admin/index.rst
@@ -1146,11 +1147,8 @@ doc/source/reference/threading.rst
 doc/source/reference/update-provider-tree.rst
 doc/source/reference/upgrade-checks.rst
 doc/source/reference/vm-states.rst
-doc/source/user/architecture.rst
 doc/source/user/availability-zones.rst
 doc/source/user/block-device-mapping.rst
-doc/source/user/cells.rst
-doc/source/user/cellsv2-layout.rst
 doc/source/user/certificate-validation.rst
 doc/source/user/feature-classification.rst
 doc/source/user/feature-matrix-gp.ini
@@ -1539,6 +1537,7 @@ nova/db/api/legacy_migrations/versions/__init__.py
 nova/db/api/migrations/README.rst
 nova/db/api/migrations/env.py
 nova/db/api/migrations/script.py.mako
+nova/db/api/migrations/versions/b30f573d3377_remove_unused_build_requests_columns.py
 nova/db/api/migrations/versions/d67eeaabee36_initial_version.py
 nova/db/main/__init__.py
 nova/db/main/alembic.ini
@@ -1573,6 +1572,7 @@ nova/db/main/legacy_migrations/versions/__init__.py
 nova/db/main/migrations/README.rst
 nova/db/main/migrations/env.py
 nova/db/main/migrations/script.py.mako
+nova/db/main/migrations/versions/16f1fbcab42b_resolve_shadow_table_diffs.py
 nova/db/main/migrations/versions/8f2f1571d55b_initial_version.py
 nova/hacking/__init__.py
 nova/hacking/checks.py
@@ -1580,6 +1580,10 @@ nova/image/__init__.py
 nova/image/glance.py
 nova/keymgr/__init__.py
 nova/keymgr/conf_key_mgr.py
+nova/limit/__init__.py
+nova/limit/local.py
+nova/limit/placement.py
+nova/limit/utils.py
 nova/locale/cs/LC_MESSAGES/nova.po
 nova/locale/de/LC_MESSAGES/nova.po
 nova/locale/es/LC_MESSAGES/nova.po
@@ -1618,7 +1622,6 @@ nova/notifications/objects/service.py
 nova/notifications/objects/volume.py
 nova/objects/__init__.py
 nova/objects/aggregate.py
-nova/objects/bandwidth_usage.py
 nova/objects/base.py
 nova/objects/block_device.py
 nova/objects/build_request.py
@@ -1735,6 +1738,7 @@ nova/privsep/linux_net.py
 nova/privsep/path.py
 nova/privsep/qemu.py
 nova/privsep/utils.py
+nova/releasenotes/notes/uwsgi-gmr-c00631db79836340.yaml
 nova/scheduler/__init__.py
 nova/scheduler/host_manager.py
 nova/scheduler/manager.py
@@ -1815,13 +1819,13 @@ nova/tests/functional/test_external_networks.py
 nova/tests/functional/test_flavor_extraspecs.py
 nova/tests/functional/test_images.py
 nova/tests/functional/test_instance_actions.py
+nova/tests/functional/test_ip_allocation.py
 nova/tests/functional/test_json_filter.py
 nova/tests/functional/test_legacy_v2_compatible_wrapper.py
 nova/tests/functional/test_list_servers_ip_filter.py
 nova/tests/functional/test_login.py
 nova/tests/functional/test_metadata.py
 nova/tests/functional/test_middleware.py
-nova/tests/functional/test_monkey_patch.py
 nova/tests/functional/test_multiattach.py
 nova/tests/functional/test_nova_manage.py
 nova/tests/functional/test_policy.py
@@ -1836,6 +1840,7 @@ nova/tests/functional/test_servers.py
 nova/tests/functional/test_servers_provider_tree.py
 nova/tests/functional/test_servers_resource_request.py
 nova/tests/functional/test_service.py
+nova/tests/functional/test_unified_limits.py
 nova/tests/functional/api/__init__.py
 nova/tests/functional/api/client.py
 nova/tests/functional/api/openstack/__init__.py
@@ -2552,7 +2557,6 @@ nova/tests/functional/compute/test_migration_list.py
 nova/tests/functional/compute/test_resource_tracker.py
 nova/tests/functional/db/__init__.py
 nova/tests/functional/db/test_aggregate.py
-nova/tests/functional/db/test_aggregate_model.py
 nova/tests/functional/db/test_archive.py
 nova/tests/functional/db/test_build_request.py
 nova/tests/functional/db/test_cell_mapping.py
@@ -2561,7 +2565,6 @@ nova/tests/functional/db/test_compute_node.py
 nova/tests/functional/db/test_connection_switch.py
 nova/tests/functional/db/test_console_auth_token.py
 nova/tests/functional/db/test_flavor.py
-nova/tests/functional/db/test_flavor_model.py
 nova/tests/functional/db/test_host_mapping.py
 nova/tests/functional/db/test_instance.py
 nova/tests/functional/db/test_instance_group.py
@@ -2573,10 +2576,10 @@ nova/tests/functional/db/test_quotas.py
 nova/tests/functional/db/test_request_spec.py
 nova/tests/functional/db/test_security_group.py
 nova/tests/functional/db/test_virtual_interface.py
-nova/tests/functional/db/api/__init__.py
 nova/tests/functional/libvirt/__init__.py
 nova/tests/functional/libvirt/base.py
 nova/tests/functional/libvirt/integrated_helpers.py
+nova/tests/functional/libvirt/test_device_bus_migration.py
 nova/tests/functional/libvirt/test_evacuate.py
 nova/tests/functional/libvirt/test_live_migration.py
 nova/tests/functional/libvirt/test_machine_type.py
@@ -2680,9 +2683,11 @@ nova/tests/functional/regressions/test_bug_1909120.py
 nova/tests/functional/regressions/test_bug_1914777.py
 nova/tests/functional/regressions/test_bug_1922053.py
 nova/tests/functional/regressions/test_bug_1928063.py
+nova/tests/functional/regressions/test_bug_1937084.py
 nova/tests/functional/regressions/test_bug_1937375.py
 nova/tests/functional/regressions/test_bug_1938326.py
 nova/tests/functional/regressions/test_bug_1939545.py
+nova/tests/functional/regressions/test_bug_1943431.py
 nova/tests/functional/regressions/test_bug_1944619.py
 nova/tests/functional/wsgi/__init__.py
 nova/tests/functional/wsgi/test_flavor_manage.py
@@ -2858,7 +2863,6 @@ nova/tests/unit/compute/test_api.py
 nova/tests/unit/compute/test_claims.py
 nova/tests/unit/compute/test_compute.py
 nova/tests/unit/compute/test_compute_mgr.py
-nova/tests/unit/compute/test_compute_utils.py
 nova/tests/unit/compute/test_flavors.py
 nova/tests/unit/compute/test_host_api.py
 nova/tests/unit/compute/test_instance_list.py
@@ -2870,6 +2874,7 @@ nova/tests/unit/compute/test_resource_tracker.py
 nova/tests/unit/compute/test_rpcapi.py
 nova/tests/unit/compute/test_shelve.py
 nova/tests/unit/compute/test_stats.py
+nova/tests/unit/compute/test_utils.py
 nova/tests/unit/compute/test_virtapi.py
 nova/tests/unit/compute/monitors/__init__.py
 nova/tests/unit/compute/monitors/test_monitors.py
@@ -2924,6 +2929,9 @@ nova/tests/unit/image/test_glance.py
 nova/tests/unit/keymgr/__init__.py
 nova/tests/unit/keymgr/fake.py
 nova/tests/unit/keymgr/test_conf_key_mgr.py
+nova/tests/unit/limit/__init__.py
+nova/tests/unit/limit/test_local.py
+nova/tests/unit/limit/test_placement.py
 nova/tests/unit/network/__init__.py
 nova/tests/unit/network/interfaces-override.template
 nova/tests/unit/network/test_network_info.py
@@ -2941,7 +2949,6 @@ nova/tests/unit/notifications/objects/test_notification.py
 nova/tests/unit/notifications/objects/test_service.py
 nova/tests/unit/objects/__init__.py
 nova/tests/unit/objects/test_aggregate.py
-nova/tests/unit/objects/test_bandwidth_usage.py
 nova/tests/unit/objects/test_block_device.py
 nova/tests/unit/objects/test_build_request.py
 nova/tests/unit/objects/test_cell_mapping.py
@@ -3182,6 +3189,7 @@ nova/tests/unit/virt/libvirt/volume/test_fs.py
 nova/tests/unit/virt/libvirt/volume/test_gpfs.py
 nova/tests/unit/virt/libvirt/volume/test_iscsi.py
 nova/tests/unit/virt/libvirt/volume/test_iser.py
+nova/tests/unit/virt/libvirt/volume/test_lightos.py
 nova/tests/unit/virt/libvirt/volume/test_mount.py
 nova/tests/unit/virt/libvirt/volume/test_net.py
 nova/tests/unit/virt/libvirt/volume/test_nfs.py
@@ -3311,6 +3319,7 @@ nova/virt/libvirt/volume/fs.py
 nova/virt/libvirt/volume/gpfs.py
 nova/virt/libvirt/volume/iscsi.py
 nova/virt/libvirt/volume/iser.py
+nova/virt/libvirt/volume/lightos.py
 nova/virt/libvirt/volume/mount.py
 nova/virt/libvirt/volume/net.py
 nova/virt/libvirt/volume/nfs.py
@@ -3364,6 +3373,7 @@ nova/virt/zvm/utils.py
 nova/volume/__init__.py
 nova/volume/cinder.py
 playbooks/ceph/glance-copy-policy.yaml
+playbooks/nova-emulation/pre.yaml
 playbooks/nova-live-migration/post-run.yaml
 playbooks/nova-multi-cell/pre.yaml
 playbooks/nova-next/post.yaml
@@ -3421,6 +3431,7 @@ releasenotes/notes/add-support-for-live-migration-with-vpmem-9af5057dbe551f3b.ya
 releasenotes/notes/add-support-for-vgpu-libvirt-91d2983e643f5ff1.yaml
 releasenotes/notes/add-support-for-vpmem-libvirt-8b66add5b2d8f5f5.yaml
 releasenotes/notes/add-swap-volume-notifications-bb7e14230fccfd6e.yaml
+releasenotes/notes/add-vmware-fcd-support-822edccb0e38bc37.yaml
 releasenotes/notes/add-whitelist-for-server-list-filter-sort-params-2ae766d03ba895e5.yaml
 releasenotes/notes/add-wsgi-config-to-wsgi-group-712b8cd9ada65b2e.yaml
 releasenotes/notes/add-xvp-config-to-vnc-group-349cca99f05fcfd3.yaml
@@ -3465,6 +3476,7 @@ releasenotes/notes/bp-add-project-and-user-id-a560d087656157d4.yaml
 releasenotes/notes/bp-add-user-id-field-to-the-migrations-table-af5989e74634b9c4.yaml
 releasenotes/notes/bp-amd-sev-libvirt-support-4b7cf8f0756d88b8.yaml
 releasenotes/notes/bp-boot-from-uefi-b413b96017db76dd.yaml
+releasenotes/notes/bp-boot-vm-with-unaddressed-port-4cb05bb6dc859d98.yaml
 releasenotes/notes/bp-cells-instance-groups-api-db-910a44ef5f2f7769.yaml
 releasenotes/notes/bp-cinder-new-attach-apis-eca854e27a255e3e.yaml
 releasenotes/notes/bp-cyborg-rebuild-and-evacuate-97bba59988b8b072.yaml
@@ -3497,7 +3509,9 @@ releasenotes/notes/bp-nova-api-hypervsor-cpu-info-b84cddf8b70b88d2.yaml
 releasenotes/notes/bp-nova-support-instance-power-update-8328355a0f3fb508.yaml
 releasenotes/notes/bp-nvme-over-fabric-nova-ae1ef46fb5a7fc02.yaml
 releasenotes/notes/bp-opencontrail-nova-vif-plugin-b132102ad79ebf90.yaml
+releasenotes/notes/bp-pick-guest-arch-based-on-host-arch-in-libvirt-driver-f087c3799d388bb6.yaml
 releasenotes/notes/bp-placement-req-filter-isolated-aggregates-26f34213ca757b5a.yaml
+releasenotes/notes/bp-policy-defaults-refresh-2-473c70f641f9f397.yaml
 releasenotes/notes/bp-policy-defaults-refresh-b8e6e2d6b1a7bc21.yaml
 releasenotes/notes/bp-policy-defaults-refresh-deprecated-apis-a758af4090419b11.yaml
 releasenotes/notes/bp-rbd-instance-snapshots-130e860b726ddc16.yaml
@@ -3514,6 +3528,7 @@ releasenotes/notes/bp-split-network-plane-for-live-migration-40bc127734173759.ya
 releasenotes/notes/bp-support-delete-on-termination-in-server-attach-volume-5d08b4e97fdd24f9.yaml
 releasenotes/notes/bp-support-hpet-on-guest-2292b2b863c4d9ef.yaml
 releasenotes/notes/bp-symmetric-allocations-6ff7b270c32dcb7d.yaml
+releasenotes/notes/bp-unified-limits-656b55863df22e16.yaml
 releasenotes/notes/bp-virt-driver-cpu-thread-pinning-1aaeeb6648f8e009.yaml
 releasenotes/notes/bp-virtuozzo-cloud-storage-support-4f4cda52ca41538e.yaml
 releasenotes/notes/bp-virtuozzo-instance-admin-password-8278cad73f3be98d.yaml
@@ -3621,8 +3636,10 @@ releasenotes/notes/bug-1944619-fix-live-migration-rollback.yaml
 releasenotes/notes/bug-1946729-wait-for-vif-plugged-event-during-hard-reboot-fb491f6a68370bab.yaml
 releasenotes/notes/bug-1948705-ff80ae392c525475.yaml
 releasenotes/notes/bug-1952941-request-spec-numa-topology-migration-c97dbd51b3c6c116.yaml
+releasenotes/notes/bug-1958636-smm-check-and-enable.yaml
 releasenotes/notes/bug-1960230-cleanup-instances-dir-resize-56282e1b436a4908.yaml
 releasenotes/notes/bug-1960401-504eb255253d966a.yaml
+releasenotes/notes/bug-1970383-segment-scheduling-permissions-92ba907b10a9eb1c.yaml
 releasenotes/notes/bug-hyperv-1629040-e1eb35a7b31d9af8.yaml
 releasenotes/notes/bug-retry-corrupted-download-5798b0df44a00e4e.yaml
 releasenotes/notes/bug-volume-attach-policy-1635358-671ce4d4ee8c211b.yaml
@@ -3638,6 +3655,7 @@ releasenotes/notes/change-consecutive-boot-failure-counter-to-weigher-428de7da0e
 releasenotes/notes/check_destination_when_evacuating-37b52ebe8b5b086c.yaml
 releasenotes/notes/check_destination_when_livemig-e69d32e02d7a18c9.yaml
 releasenotes/notes/cinder-backend-report-discard-1def1c28140def9b.yaml
+releasenotes/notes/cinder-debug-c522618d82987971.yaml
 releasenotes/notes/cinder-detect-nonbootable-image-6fad7f865b45f879.yaml
 releasenotes/notes/cold-migration-with-target-queens-2dcd09c3a3414302.yaml
 releasenotes/notes/complex-anti-affinity-policies-dcf4719e859093be.yaml
@@ -3708,6 +3726,7 @@ releasenotes/notes/deprecate-nova-manage-vm-list-571162f55173cccc.yaml
 releasenotes/notes/deprecate-nova-network-opts-b6da6af4497ef4ca.yaml
 releasenotes/notes/deprecate-nova-xvpvncproxy-16b56634cd07dbd9.yaml
 releasenotes/notes/deprecate-old-auth-parameters-948d70045335b312.yaml
+releasenotes/notes/deprecate-powervm-yoga-d368b43ba86eb830.yaml
 releasenotes/notes/deprecate-remap_vbd_dev-opt-c1690c5b447f0053.yaml
 releasenotes/notes/deprecate-retry-filter-4d1dba39a2c21836.yaml
 releasenotes/notes/deprecate-scheduler-driver-opt-4d6a266590b52e2c.yaml
@@ -3752,6 +3771,7 @@ releasenotes/notes/display-flavor-dict-in-server-details-589c1db487f226cb.yaml
 releasenotes/notes/dnspython-2.0.0-not-supported-by-eventlet-b8adf73ed9e14817.yaml
 releasenotes/notes/drbd-libvirt-volume-driver-d27c79e62c0beb64.yaml
 releasenotes/notes/driver-capabilities-to-traits-152eb851cd016f4d.yaml
+releasenotes/notes/drop-bandwidth-field-from-notifications-d98812a3256cd573.yaml
 releasenotes/notes/drop-cinder-v2-support-d761d12d552616aa.yaml
 releasenotes/notes/drop-database-use_db_reconnect-opt-7e0062d3da76032a.yaml
 releasenotes/notes/drop-libvirt-uml-support-8ba9311b4cfc8ca6.yaml
@@ -3769,6 +3789,7 @@ releasenotes/notes/enhanced-kvm-storage-qos-f8f67d404949c0b0.yaml
 releasenotes/notes/expose-shutdown-retry-interval-d83724ade1b44e62.yaml
 releasenotes/notes/extend-libvirt-video-model-support-d630b99ef5039f51.yaml
 releasenotes/notes/extensions_remove-37e9d4092981abbe.yaml
+releasenotes/notes/extra-sorting-for-host-cells-c03e37de1e57043b.yaml
 releasenotes/notes/fill-instance-action-record-gaps-14b36eba313d6d87.yaml
 releasenotes/notes/fill_virtual_interface_list-1ec5bcccde2ebd22.yaml
 releasenotes/notes/filters_use_reqspec-9f92b9c0ead76093.yaml
@@ -3780,6 +3801,7 @@ releasenotes/notes/fix-pci-passthrough-for-cavium-thunderx-8fbd1c40718569e2.yaml
 releasenotes/notes/fix-simple-tenant-usage-pagination-393ed6e7d0e31594.yaml
 releasenotes/notes/fix-virtual-device-role-tagging-7cfdb14f2ba4fbcf.yaml
 releasenotes/notes/flavor-api-policy-granularity-f563d621c615fd64.yaml
+releasenotes/notes/flavor-based-multiqueue-configuration-41e2cbc4ca024682.yaml
 releasenotes/notes/flavor-description-02f8b8626da71a25.yaml
 releasenotes/notes/flavor-extra-spec-image-property-validation-7310954ba3822477.yaml
 releasenotes/notes/flavor-extra-spec-validators-76d1f2e52ba753db.yaml
@@ -3797,6 +3819,7 @@ releasenotes/notes/glance-api-servers-must-be-urls-558298647cbfc81c.yaml
 releasenotes/notes/glance-via-ksa-5646eb3d5db51c54.yaml
 releasenotes/notes/glance_v2-15b080e361804976.yaml
 releasenotes/notes/granular-extra-specs-50b26b8f63717942.yaml
+releasenotes/notes/greendns-34df7f9fba952bcd.yaml
 releasenotes/notes/heal-allocations-dry-run-1761fab00f7967d1.yaml
 releasenotes/notes/heal-allocations-instance-uuid-9aa93fdef5015c64.yaml
 releasenotes/notes/hide_hypervisor_id-6f93e7552336930d.yaml
@@ -3867,6 +3890,7 @@ releasenotes/notes/libvirt-workarounds-remove-rbd_volume_local_attach-ebdf9cf313
 releasenotes/notes/libvirt_fix_ipv6_live_migration-bbcde8f3b7d17921.yaml
 releasenotes/notes/libvirt_hardware_policy_from_libosinfo-19e261851d1ad93a.yaml
 releasenotes/notes/libvirt_ppc64le_hugepage_support-b9fd39cf20c8e91d.yaml
+releasenotes/notes/lightos-fcafefdfd0939316.yaml
 releasenotes/notes/list-invalid-status-af07af378728bc57.yaml
 releasenotes/notes/list-server-bad-status-fix-7db504b38c8d732f.yaml
 releasenotes/notes/live-migrate-config-option-force-minimum-value-c62ad8481614b146.yaml
@@ -3926,6 +3950,7 @@ releasenotes/notes/notification-transformation-rocky-e541ba916e8e38fd.yaml
 releasenotes/notes/notify_on_state_change_opt-e3c6f6664e143993.yaml
 releasenotes/notes/nova-manage-db-archive-before-option-8296af1c815f5f8a.yaml
 releasenotes/notes/nova-manage-heal-port-allocation-48cc1a34c92d42cd.yaml
+releasenotes/notes/nova-manage-image-property-26b2e3eaa2ef343b.yaml
 releasenotes/notes/nova-manage-online-migrations-exit-status-9de5ea7836d0e368.yaml
 releasenotes/notes/nova-manage-placement-heal-allocations-13a9a0a3df910e0b.yaml
 releasenotes/notes/nova-manage-placement-sync-aggregates-1e6380eceda7dc9b.yaml
@@ -3957,6 +3982,7 @@ releasenotes/notes/pagination-for-hypervisor-9c3393cd58149791.yaml
 releasenotes/notes/pagination-for-usage-a313397f9a7e9a70.yaml
 releasenotes/notes/parallels_support_snapshot-29b4ffae300c1f05.yaml
 releasenotes/notes/pci-passthrough-whitelist-regex-support-5004c5db4fbe09c8.yaml
+releasenotes/notes/pci-vpd-capability-0d8039629db4afb8.yaml
 releasenotes/notes/per-aggregate-scheduling-weight-7535fd6e8345034d.yaml
 releasenotes/notes/per-instance-serial-f2e597cb05d1b09e.yaml
 releasenotes/notes/pike-fw-driver-noop-699d411b790035d4.yaml
@@ -4025,6 +4051,7 @@ releasenotes/notes/recheck-quota-conf-043a5d6057b33282.yaml
 releasenotes/notes/records-list-skip-down-cells-84d995e75c77c041.yaml
 releasenotes/notes/refresh-quotas-usage-362b239171c75f5f.yaml
 releasenotes/notes/register-allocation-per-cell-9177b3e2161a632c.yaml
+releasenotes/notes/register-defaults-for-undefined-hw-image-properties-d86bcf99f4610239.yaml
 releasenotes/notes/reject-interface-attach-with-port-resource-request-17473ddc5a989a2a.yaml
 releasenotes/notes/reject-networks-with-qos-policy-2746c74fd1f3ff26.yaml
 releasenotes/notes/remove-api-rate-limit-option-91a17e057081381a.yaml
@@ -4071,6 +4098,7 @@ releasenotes/notes/remove-deprecated-remap_vbd_dev-opt-22c1898f25b58280.yaml
 releasenotes/notes/remove-deprecated-remove_unused_kernels-b663aa6829761f1e.yaml
 releasenotes/notes/remove-deprecated-scheduler-opts-37afb63a94e8b47e.yaml
 releasenotes/notes/remove-deprecated-vendordata_driver-opt-3ececc051e581070.yaml
+releasenotes/notes/remove-deprecated-vnc-opts-c2bbcbf0fb777593.yaml
 releasenotes/notes/remove-discoverable-policy-rules-4a2c87e1c88a3228.yaml
 releasenotes/notes/remove-ec2-api-service-c17a35ed297355b8.yaml
 releasenotes/notes/remove-extensible-resource-tracker-37e8fdac46ec6eba.yaml
@@ -4100,6 +4128,7 @@ releasenotes/notes/remove-nova-xvpvncproxy-1c189cdff4b133e8.yaml
 releasenotes/notes/remove-on-shared-storage-flag-from-evacuate-api-76a3d58616479fe9.yaml
 releasenotes/notes/remove-os-pci-api-4fcbf5fdf11c4c63.yaml
 releasenotes/notes/remove-ovs-integration-bridge-default-0b838f0816829b68.yaml
+releasenotes/notes/remove-qos-queue-vmware-nsx-extension-208d72da23e7ae49.yaml
 releasenotes/notes/remove-quota-options-0e407c56ea993f5a.yaml
 releasenotes/notes/remove-retry-and-aggregate-filters-f872a85d0b815982.yaml
 releasenotes/notes/remove-scality-volume-driver-21ff4832d0d3f28e.yaml
@@ -4205,6 +4234,7 @@ releasenotes/notes/support-cold-migrating-neutron-ports-with-resource-request-6d
 releasenotes/notes/support-interface-attach-with-qos-port-22eb452202eb92fd.yaml
 releasenotes/notes/support-neutron-ports-with-resource-request-cb9ad5e9757792d0.yaml
 releasenotes/notes/support-novnc-1.1.0-ce677fe3381b2a11.yaml
+releasenotes/notes/support-port-resource-request-groups-neutron-api-extension-70a902b79f735cff.yaml
 releasenotes/notes/support-qemu-native-tls-for-migration-31d8b0ae9eb2c893.yaml
 releasenotes/notes/support-server-move-operations-with-neutron-ports-with-resource-request-c41598d0e4aef37b.yaml
 releasenotes/notes/support-sriov-attach-5a52a3388e2e41c2.yaml
@@ -4235,6 +4265,7 @@ releasenotes/notes/unversioned-as-default-notification_format-f149db44b319aa07.y
 releasenotes/notes/update-swap-decorator-7622a265df55feaa.yaml
 releasenotes/notes/upgrade_rootwrap_compute_filters-428ca239f2e4e63d.yaml
 releasenotes/notes/urandom-as-default-for-rng_dev_path-150a76b0ea74cbc2.yaml
+releasenotes/notes/use-multipath-0a0aa2b479e02370.yaml
 releasenotes/notes/use-neutron-when-list-instances-by-ip-6682018bf88b6b0e.yaml
 releasenotes/notes/use-new-style-policy-in-notifications-3c6eefbb56224be2.yaml
 releasenotes/notes/use-pcpu-and-vcpu-in-one-instance-0ea66aeb9c2970de.yaml
@@ -4261,6 +4292,7 @@ releasenotes/notes/victoria-libvirt-version-bump-e1a09b3a72ee56a4.yaml
 releasenotes/notes/victoria-prelude-9b4c16ff8c6e7f3e.yaml
 releasenotes/notes/vif-vrouter-multiqueue-077785e1a2d242a0.yaml
 releasenotes/notes/virt-device-tagged-attach-53e214d3b3fdd183.yaml
+releasenotes/notes/virtio-as-default-display-device-5341d3d5180036e2.yaml
 releasenotes/notes/virtio-max-queues-27f73e988c7e66ba.yaml
 releasenotes/notes/virtio-rng-by-default-9cc1366ed1634129.yaml
 releasenotes/notes/virtual-device-role-tagging-ec0c36226a3f2e4d.yaml
@@ -4273,6 +4305,7 @@ releasenotes/notes/vmware-mem-stats-a9b6fac815d2bc57.yaml
 releasenotes/notes/vmware_disk_enableuuid_true-99b88e00fc168dd3.yaml
 releasenotes/notes/vmware_integration_bridge-249567087da5ecb2.yaml
 releasenotes/notes/vmware_limits-16edee7a9ad023bc.yaml
+releasenotes/notes/vnic-type-remote-managed-b90cacf1c91df22b.yaml
 releasenotes/notes/volume-attach-versioned-notifications-ef5afde3a5f6a749.yaml
 releasenotes/notes/vrouter-hw-offloads-38257f49ac1d3a60.yaml
 releasenotes/notes/wallaby-libvirt-version-bump-6fd35d03d7f3df28.yaml
@@ -4290,6 +4323,7 @@ releasenotes/notes/xenapi-virt-device-role-tagging-5ffb440f75fae834.yaml
 releasenotes/notes/xenserver-glance-plugin-1.3-11c3b70b8c928263.yaml
 releasenotes/notes/xenserver-plugin-extensions-57e01c9473073d0a.yaml
 releasenotes/notes/xentool-destory-cached-image-c9d39a733002ca7d.yaml
+releasenotes/notes/yoga-prelude-31dd83eb18c789f6.yaml
 releasenotes/notes/zookeeper-servicegroup-driver-removed-c3bcaa6f9fe976ed.yaml
 releasenotes/notes/releasenotes/notes/bochs-ffaa289da97d08c8.yaml
 releasenotes/source/conf.py
@@ -4307,6 +4341,7 @@ releasenotes/source/unreleased.rst
 releasenotes/source/ussuri.rst
 releasenotes/source/victoria.rst
 releasenotes/source/wallaby.rst
+releasenotes/source/xena.rst
 releasenotes/source/_static/.placeholder
 releasenotes/source/_templates/.placeholder
 releasenotes/source/locale/en_GB/LC_MESSAGES/releasenotes.po

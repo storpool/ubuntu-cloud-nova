@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: nova
-Version: 24.1.1
+Version: 25.0.1
 Summary: Cloud computing fabric controller
 Home-page: https://docs.openstack.org/nova/latest/
 Author: OpenStack
@@ -95,8 +95,13 @@ Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3.6
 Classifier: Programming Language :: Python :: 3.7
 Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
 Classifier: Programming Language :: Python :: 3 :: Only
 Classifier: Programming Language :: Python :: Implementation :: CPython
 Requires-Python: >=3.6
+Provides-Extra: hyperv
 Provides-Extra: osprofiler
+Provides-Extra: powervm
 Provides-Extra: test
+Provides-Extra: vmware
+Provides-Extra: zvm

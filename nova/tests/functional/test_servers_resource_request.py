@@ -146,12 +146,13 @@ class ExtendedResourceRequestNeutronFixture(ResourceRequestNeutronFixture):
             # port_resource_request_groups.py
             {
                 "updated": "2021-08-02T10:00:00-00:00",
-                "name": constants.RESOURCE_REQUEST_GROUPS_EXTENSION,
+                "name": "Port Resource Request Groups",
                 "links": [],
                 "alias": "port-resource-request-groups",
-                "description":
+                "description": (
                     "Support requesting multiple groups of resources and "
                     "traits from the same RP subtree in resource_request"
+                ),
             }
         )
         return extensions
@@ -1638,6 +1639,7 @@ class MultiGroupResourceRequestBasedSchedulingTest(
     and packet rate resource requests. This also means that the neutron fixture
     simulates the new resource_request format for all ports.
     """
+
     def setUp(self):
         super().setUp()
         self.neutron = self.useFixture(
@@ -2972,6 +2974,7 @@ class ExtendedResourceRequestOldCompute(
     hasn't been upgraded to a version that support extended resource request.
     So nova rejects the operations due to the old compute.
     """
+
     def setUp(self):
         super().setUp()
         self.neutron = self.useFixture(

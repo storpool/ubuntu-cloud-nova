@@ -106,6 +106,7 @@ VNIC_TYPE_VIRTIO_FORWARDER = 'virtio-forwarder'
 VNIC_TYPE_VDPA = 'vdpa'
 VNIC_TYPE_ACCELERATOR_DIRECT = 'accelerator-direct'
 VNIC_TYPE_ACCELERATOR_DIRECT_PHYSICAL = 'accelerator-direct-physical'
+VNIC_TYPE_REMOTE_MANAGED = "remote-managed"
 
 # Define list of ports which needs pci request.
 # Note: The macvtap port needs a PCI request as it is a tap interface
@@ -121,14 +122,15 @@ VNIC_TYPE_ACCELERATOR_DIRECT_PHYSICAL = 'accelerator-direct-physical'
 # selected compute node.
 VNIC_TYPES_SRIOV = (
     VNIC_TYPE_DIRECT, VNIC_TYPE_MACVTAP, VNIC_TYPE_DIRECT_PHYSICAL,
-    VNIC_TYPE_VIRTIO_FORWARDER, VNIC_TYPE_VDPA)
+    VNIC_TYPE_VIRTIO_FORWARDER, VNIC_TYPE_VDPA, VNIC_TYPE_REMOTE_MANAGED)
 
 # Define list of ports which are passthrough to the guest
 # and need a special treatment on snapshot and suspend/resume
 VNIC_TYPES_DIRECT_PASSTHROUGH = (VNIC_TYPE_DIRECT,
                                  VNIC_TYPE_DIRECT_PHYSICAL,
                                  VNIC_TYPE_ACCELERATOR_DIRECT,
-                                 VNIC_TYPE_ACCELERATOR_DIRECT_PHYSICAL)
+                                 VNIC_TYPE_ACCELERATOR_DIRECT_PHYSICAL,
+                                 VNIC_TYPE_REMOTE_MANAGED)
 
 # Define list of ports which contains devices managed by cyborg.
 VNIC_TYPES_ACCELERATOR = (
@@ -186,6 +188,7 @@ NIC_NAME_LEN = 14
 
 class Model(dict):
     """Defines some necessary structures for most of the network models."""
+
     def __repr__(self):
         return jsonutils.dumps(self)
 
@@ -202,6 +205,7 @@ class Model(dict):
 
 class IP(Model):
     """Represents an IP address in Nova."""
+
     def __init__(self, address=None, type=None, **kwargs):
         super(IP, self).__init__()
 
@@ -242,6 +246,7 @@ class IP(Model):
 
 class FixedIP(IP):
     """Represents a Fixed IP address in Nova."""
+
     def __init__(self, floating_ips=None, **kwargs):
         super(FixedIP, self).__init__(**kwargs)
         self['floating_ips'] = floating_ips or []
@@ -273,6 +278,7 @@ class FixedIP(IP):
 
 class Route(Model):
     """Represents an IP Route in Nova."""
+
     def __init__(self, cidr=None, gateway=None, interface=None, **kwargs):
         super(Route, self).__init__()
 
@@ -292,6 +298,7 @@ class Route(Model):
 
 class Subnet(Model):
     """Represents a Subnet in Nova."""
+
     def __init__(self, cidr=None, dns=None, gateway=None, ips=None,
                  routes=None, **kwargs):
         super(Subnet, self).__init__()
@@ -343,6 +350,7 @@ class Subnet(Model):
 
 class Network(Model):
     """Represents a Network in Nova."""
+
     def __init__(self, id=None, bridge=None, label=None,
                  subnets=None, **kwargs):
         super(Network, self).__init__()
@@ -397,6 +405,7 @@ class VIF8021QbhParams(Model):
 
 class VIF(Model):
     """Represents a Virtual Interface in Nova."""
+
     def __init__(self, id=None, address=None, network=None, type=None,
                  details=None, devname=None, ovs_interfaceid=None,
                  qbh_params=None, qbg_params=None, active=False,

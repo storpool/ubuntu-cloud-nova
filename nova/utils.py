@@ -485,6 +485,7 @@ class UndoManager(object):
     """Provides a mechanism to facilitate rolling back a series of actions
     when an exception is raised.
     """
+
     def __init__(self):
         self.undo_stack = []
 

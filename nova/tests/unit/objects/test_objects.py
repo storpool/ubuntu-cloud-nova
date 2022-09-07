@@ -1046,8 +1046,6 @@ class TestRegistry(test.NoDBTestCase):
 object_data = {
     'Aggregate': '1.3-f315cb68906307ca2d1cca84d4753585',
     'AggregateList': '1.3-3ea55a050354e72ef3306adefa553957',
-    'BandwidthUsage': '1.2-c6e4c779c7f40f2407e3d70022e3cd1c',
-    'BandwidthUsageList': '1.2-5fe7475ada6fe62413cbfcc06ec70746',
     'BlockDeviceMapping': '1.20-45a6ad666ddf14bbbedece2293af77e2',
     'BlockDeviceMappingList': '1.18-73bcbbae5ef5e8adcedbc821db869306',
     'BuildRequest': '1.3-077dee42bed93f8a5b62be77657b7152',
@@ -1074,7 +1072,7 @@ object_data = {
     'HyperVLiveMigrateData': '1.4-e265780e6acfa631476c8170e8d6fce0',
     'IDEDeviceBus': '1.0-29d4c9f27ac44197f01b6ac1b7e16502',
     'ImageMeta': '1.8-642d1b2eb3e880a367f37d72dd76162d',
-    'ImageMetaProps': '1.30-5bfc3dd01bbfdbb28cb3a096c0b2f383',
+    'ImageMetaProps': '1.31-27337af769b0c85b4ba4be8aebc1a65d',
     'Instance': '2.7-d187aec68cad2e4d8b8a03a68e4739ce',
     'InstanceAction': '1.2-9a5abc87fdd3af46f45731960651efb5',
     'InstanceActionEvent': '1.4-5b1f361bd81989f8bb2c20bb7e8a4cb4',

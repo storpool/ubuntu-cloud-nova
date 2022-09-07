@@ -124,6 +124,19 @@ def update_instance_cache_with_nw_info(impl, context, instance, nw_info=None):
         ic.network_info = nw_info
         ic.save()
         instance.info_cache = ic
+    except exception.InstanceNotFound as e:
+        # The instance could have moved during a cross-cell migration when we
+        # receive an external event from neutron. Avoid logging a traceback
+        # when it happens.
+        msg = str(e)
+        if e.__class__.__name__.endswith('_Remote'):
+            # If this exception was raised remotely over RPC, the traceback(s)
+            # will be appended to the message. Truncate it in that case.
+            msg = utils.safe_truncate(msg.split('\n', 1)[0], 255)
+        LOG.info('Failed storing info cache due to: %s. '
+                 'The instance may have moved to another cell during a '
+                 'cross-cell migration', msg, instance=instance)
+        raise exception.InstanceNotFound(message=msg)
     except Exception:
         with excutils.save_and_reraise_exception():
             LOG.exception('Failed storing info cache', instance=instance)
@@ -165,6 +178,7 @@ class ClientWrapper(clientv20.Client):
     Wraps the callable methods, catches Unauthorized,Forbidden from Neutron and
     convert it to a 401,403 for Nova clients.
     """
+
     def __init__(self, base_client, admin):
         # Expose all attributes from the base_client instance
         self.__dict__ = base_client.__dict__
@@ -381,7 +395,8 @@ class API:
                 # If a host was provided, delete any bindings between that
                 # host and the ports as long as the host isn't the same as
                 # the current instance.host.
-                has_binding_ext = self.supports_port_binding_extension(context)
+                has_binding_ext = self.has_port_binding_extension(
+                    client=admin_client)
                 if port_migrating and has_binding_ext:
                     self._delete_port_bindings(context, ports, host)
             elif port_migrating:
@@ -666,7 +681,9 @@ class API:
             # for the physical device but don't want to overwrite the other
             # information in the binding profile.
             for profile_key in ('pci_vendor_info', 'pci_slot',
-                                constants.ALLOCATION, 'arq_uuid'):
+                                constants.ALLOCATION, 'arq_uuid',
+                                'physical_network', 'card_serial_number',
+                                'vf_num', 'pf_mac_address'):
                 if profile_key in port_profile:
                     del port_profile[profile_key]
             port_req_body['port'][constants.BINDING_PROFILE] = port_profile
@@ -674,8 +691,12 @@ class API:
             # NOTE: For internal DNS integration (network does not have a
             # dns_domain), or if we cannot retrieve network info, we use the
             # admin client to reset dns_name.
-            if self._has_dns_extension() and not network.get('dns_domain'):
+            if (
+                self.has_dns_extension(client=port_client) and
+                not network.get('dns_domain')
+            ):
                 port_req_body['port']['dns_name'] = ''
+
             try:
                 port_client.update_port(port_id, port_req_body)
             except neutron_client_exc.PortNotFoundClient:
@@ -1332,62 +1353,102 @@ class API:
         return (nets_in_requested_order, ports_in_requested_order,
             preexisting_port_ids, created_port_ids)
 
-    def _refresh_neutron_extensions_cache(self, context, neutron=None):
+    def _refresh_neutron_extensions_cache(self, client):
         """Refresh the neutron extensions cache when necessary."""
         if (not self.last_neutron_extension_sync or
             ((time.time() - self.last_neutron_extension_sync) >=
              CONF.neutron.extension_sync_interval)):
-            if neutron is None:
-                neutron = get_client(context)
-            extensions_list = neutron.list_extensions()['extensions']
+            extensions_list = client.list_extensions()['extensions']
             self.last_neutron_extension_sync = time.time()
             self.extensions.clear()
-            self.extensions = {ext['name']: ext for ext in extensions_list}
+            self.extensions = {ext['alias']: ext for ext in extensions_list}
 
-    def _has_multi_provider_extension(self, context, neutron=None):
-        self._refresh_neutron_extensions_cache(context, neutron=neutron)
-        return constants.MULTI_NET_EXT in self.extensions
+    def _has_extension(self, extension, context=None, client=None):
+        """Check if the provided neutron extension is enabled.
 
-    def _has_dns_extension(self):
-        return constants.DNS_INTEGRATION in self.extensions
+        :param extension: The alias of the extension to check
+        :param client: keystoneauth1.adapter.Adapter
+        :param context: nova.context.RequestContext
+        :returns: True if the neutron extension is available, else False
+        """
+        if client is None:
+            client = get_client(context)
 
-    def _has_qos_queue_extension(self, context, neutron=None):
-        self._refresh_neutron_extensions_cache(context, neutron=neutron)
-        return constants.QOS_QUEUE in self.extensions
+        self._refresh_neutron_extensions_cache(client)
+        return extension in self.extensions
 
-    def _has_fip_port_details_extension(self, context, neutron=None):
-        self._refresh_neutron_extensions_cache(context, neutron=neutron)
-        return constants.FIP_PORT_DETAILS in self.extensions
+    def has_multi_provider_extension(self, context=None, client=None):
+        """Check if the 'multi-provider' extension is enabled.
 
-    def has_substr_port_filtering_extension(self, context):
-        self._refresh_neutron_extensions_cache(context)
-        return constants.SUBSTR_PORT_FILTERING in self.extensions
+        This extension allows administrative users to define multiple physical
+        bindings for a logical network.
+        """
+        return self._has_extension(constants.MULTI_PROVIDER, context, client)
 
-    def _has_segment_extension(self, context, neutron=None):
-        self._refresh_neutron_extensions_cache(context, neutron=neutron)
-        return constants.SEGMENT in self.extensions
+    def has_dns_extension(self, context=None, client=None):
+        """Check if the 'dns-integration' extension is enabled.
+
+        This extension adds the 'dns_name' and 'dns_assignment' attributes to
+        port resources.
+        """
+        return self._has_extension(constants.DNS_INTEGRATION, context, client)
 
     # TODO(gibi): Remove all branches where this is False after Neutron made
     # the this extension mandatory. In Xena this extension will be optional to
     # support the scenario where Neutron upgraded first. So Neutron can mark
     # this mandatory earliest in Yoga.
-    def has_extended_resource_request_extension(self, context, neutron=None):
-        self._refresh_neutron_extensions_cache(context, neutron=neutron)
-        return constants.RESOURCE_REQUEST_GROUPS_EXTENSION in self.extensions
+    def has_extended_resource_request_extension(
+        self, context=None, client=None,
+    ):
+        return self._has_extension(
+            constants.RESOURCE_REQUEST_GROUPS, context, client,
+        )
 
-    def supports_port_binding_extension(self, context):
-        """This is a simple check to see if the neutron "binding-extended"
-        extension exists and is enabled.
+    def has_vnic_index_extension(self, context=None, client=None):
+        """Check if the 'vnic-index' extension is enabled.
 
-        The "binding-extended" extension allows nova to bind a port to multiple
-        hosts at the same time, like during live migration.
-
-        :param context: the user request context
-        :returns: True if the binding-extended API extension is available,
-                  False otherwise
+        This extension is provided by the VMWare NSX neutron plugin.
         """
-        self._refresh_neutron_extensions_cache(context)
-        return constants.PORT_BINDING_EXTENDED in self.extensions
+        return self._has_extension(constants.VNIC_INDEX, context, client)
+
+    def has_fip_port_details_extension(self, context=None, client=None):
+        """Check if the 'fip-port-details' extension is enabled.
+
+        This extension adds the 'port_details' attribute to floating IPs.
+        """
+        return self._has_extension(constants.FIP_PORT_DETAILS, context, client)
+
+    def has_substr_port_filtering_extension(self, context=None, client=None):
+        """Check if the 'ip-substring-filtering' extension is enabled.
+
+        This extension adds support for filtering ports by using part of an IP
+        address.
+        """
+        return self._has_extension(
+            constants.SUBSTR_PORT_FILTERING, context, client
+        )
+
+    def has_segment_extension(self, context=None, client=None):
+        """Check if the neutron 'segment' extension is enabled.
+
+        This extension exposes information about L2 segments of a network.
+        """
+        return self._has_extension(
+            constants.SEGMENT, context, client,
+        )
+
+    def has_port_binding_extension(self, context=None, client=None):
+        """Check if the neutron 'binding-extended' extension is enabled.
+
+        This extensions exposes port bindings of a virtual port to external
+        application.
+
+        This extension allows nova to bind a port to multiple hosts at the same
+        time, like during live migration.
+        """
+        return self._has_extension(
+            constants.PORT_BINDING_EXTENDED, context, client
+        )
 
     def bind_ports_to_host(self, context, instance, host,
                            vnic_types=None, port_profiles=None):
@@ -1401,7 +1462,7 @@ class API:
         In the event of an error, any ports which were successfully bound to
         the host should have those host bindings removed from the ports.
 
-        This method should not be used if "supports_port_binding_extension"
+        This method should not be used if "has_port_binding_extension"
         returns False.
 
         :param context: the user request context
@@ -1480,7 +1541,7 @@ class API:
     def delete_port_binding(self, context, port_id, host):
         """Delete the port binding for the given port ID and host
 
-        This method should not be used if "supports_port_binding_extension"
+        This method should not be used if "has_port_binding_extension"
         returns False.
 
         :param context: The request context for the operation.
@@ -1502,14 +1563,66 @@ class API:
                 raise exception.PortBindingDeletionFailed(
                     port_id=port_id, host=host)
 
+    def _get_vf_pci_device_profile(self, pci_dev):
+        """Get VF-specific fields to add to the PCI device profile.
+
+        This data can be useful, e.g. for off-path networking backends that
+        need to do the necessary plumbing in order to set a VF up for packet
+        forwarding.
+        """
+        vf_profile: ty.Dict[str, ty.Union[str, int]] = {}
+        try:
+            pf_mac = pci_utils.get_mac_by_pci_address(pci_dev.parent_addr)
+        except (exception.PciDeviceNotFoundById) as e:
+            LOG.debug(
+                "Could not determine PF MAC address for a VF with"
+                " addr %(addr)s, error: %(e)s",
+                {"addr": pci_dev.address, "e": e})
+            # NOTE(dmitriis): we do not raise here since not all PFs will
+            # have netdevs even when VFs are netdevs (see LP: #1915255). The
+            # rest of the fields (VF number and card serial) are not enough
+            # to fully identify the VF so they are not populated either.
+            return vf_profile
+        try:
+            vf_num = pci_utils.get_vf_num_by_pci_address(
+                pci_dev.address)
+        except exception.PciDeviceNotFoundById as e:
+            # This is unlikely to happen because the kernel has a common SR-IOV
+            # code that creates physfn symlinks, however, it would be better
+            # to avoid raising an exception here and simply warn an operator
+            # that things did not go as planned.
+            LOG.warning(
+                "Could not determine a VF logical number for a VF"
+                " with addr %(addr)s, error: %(e)s", {
+                    "addr": pci_dev.address, "e": e})
+            return vf_profile
+        card_serial_number = pci_dev.card_serial_number
+        if card_serial_number:
+            vf_profile.update({
+                'card_serial_number': card_serial_number
+            })
+        vf_profile.update({
+            'pf_mac_address': pf_mac,
+            'vf_num': vf_num,
+        })
+        return vf_profile
+
     def _get_pci_device_profile(self, pci_dev):
         dev_spec = self.pci_whitelist.get_devspec(pci_dev)
         if dev_spec:
-            return {'pci_vendor_info': "%s:%s" %
-                        (pci_dev.vendor_id, pci_dev.product_id),
-                    'pci_slot': pci_dev.address,
-                    'physical_network':
-                        dev_spec.get_tags().get('physical_network')}
+            dev_profile = {
+                'pci_vendor_info': "%s:%s"
+                % (pci_dev.vendor_id, pci_dev.product_id),
+                'pci_slot': pci_dev.address,
+                'physical_network': dev_spec.get_tags().get(
+                    'physical_network'
+                ),
+            }
+            if pci_dev.dev_type == obj_fields.PciDeviceType.SRIOV_VF:
+                dev_profile.update(
+                    self._get_vf_pci_device_profile(pci_dev))
+            return dev_profile
+
         raise exception.PciDeviceNotFound(node_id=pci_dev.compute_node_id,
                                           address=pci_dev.address)
 
@@ -1589,17 +1702,16 @@ class API:
 
         If the extensions loaded contain QOS_QUEUE then pass the rxtx_factor.
         """
-        if self._has_qos_queue_extension(context, neutron=neutron):
-            flavor = instance.get_flavor()
-            rxtx_factor = flavor.get('rxtx_factor')
-            port_req_body['port']['rxtx_factor'] = rxtx_factor
+        if neutron is None:
+            neutron = get_client(context)
+
         port_req_body['port'][constants.BINDING_HOST_ID] = bind_host_id
         self._populate_neutron_binding_profile(instance,
                                                pci_request_id,
                                                port_req_body,
                                                port_arq)
 
-        if self._has_dns_extension():
+        if self.has_dns_extension(client=neutron):
             # If the DNS integration extension is enabled in Neutron, most
             # ports will get their dns_name attribute set in the port create or
             # update requests in allocate_for_instance. So we just add the
@@ -1625,7 +1737,8 @@ class API:
         an additional update request. Only a very small fraction of ports will
         require this additional update request.
         """
-        if self._has_dns_extension() and network.get('dns_domain'):
+        if self.has_dns_extension(client=neutron) and network.get(
+                'dns_domain'):
             try:
                 port_req_body = {'port': {'dns_name': instance.hostname}}
                 neutron.update_port(port_id, port_req_body)
@@ -1637,7 +1750,7 @@ class API:
                          'name') % {'hostname': instance.hostname})
                 raise exception.InvalidInput(reason=msg)
 
-    def _reset_port_dns_name(self, network, port_id, neutron_client):
+    def _reset_port_dns_name(self, network, port_id, client):
         """Reset an instance port dns_name attribute to empty when using
         external DNS service.
 
@@ -1647,10 +1760,11 @@ class API:
         request with a Neutron client using user's context, so that the DNS
         record can be found under user's zone and domain.
         """
-        if self._has_dns_extension() and network.get('dns_domain'):
+        if self.has_dns_extension(client=client) and network.get(
+                'dns_domain'):
             try:
                 port_req_body = {'port': {'dns_name': ''}}
-                neutron_client.update_port(port_id, port_req_body)
+                client.update_port(port_id, port_req_body)
             except neutron_client_exc.NeutronClientException:
                 LOG.exception("Failed to reset dns_name for port %s", port_id)
 
@@ -2024,7 +2138,7 @@ class API:
             segments, the first segment that defines a physnet value will be
             used for the physnet name.
         """
-        if self._has_multi_provider_extension(context, neutron=neutron):
+        if self.has_multi_provider_extension(client=neutron):
             network = neutron.show_network(net_id,
                                            fields='segments').get('network')
             segments = network.get('segments', {})
@@ -2067,6 +2181,27 @@ class API:
             # This allows the user to specify things like '1' and 'yes' in
             # the port binding profile and we can handle it as a boolean.
             return strutils.bool_from_string(value)
+
+    @staticmethod
+    def _is_remote_managed(vnic_type):
+        """Determine if the port is remote_managed or not by VNIC type.
+
+        :param str vnic_type: The VNIC type to assess.
+        :return: A boolean indicator whether the NIC is remote managed or not.
+        :rtype: bool
+        """
+        return vnic_type == network_model.VNIC_TYPE_REMOTE_MANAGED
+
+    def is_remote_managed_port(self, context, port_id):
+        """Determine if a port has a REMOTE_MANAGED VNIC type.
+
+        :param context: The request context
+        :param port_id: The id of the Neutron port
+        """
+        port = self.show_port(context, port_id)['port']
+        return self._is_remote_managed(
+            port.get('binding:vnic_type', network_model.VNIC_TYPE_NORMAL)
+        )
 
     # NOTE(sean-k-mooney): we might want to have this return a
     # nova.network.model.VIF object instead in the future.
@@ -2239,7 +2374,13 @@ class API:
                 # libvirt to expose the nic feature. At the moment
                 # there is a limitation that deployers cannot use both
                 # SR-IOV modes (legacy and ovs) in the same deployment.
-                spec = {pci_request.PCI_NET_TAG: physnet}
+                spec = {
+                    pci_request.PCI_NET_TAG: physnet,
+                    # Convert the value to string since tags are compared as
+                    # string values case-insensitively.
+                    pci_request.PCI_REMOTE_MANAGED_TAG:
+                    str(self._is_remote_managed(vnic_type)),
+                }
                 dev_type = pci_request.DEVICE_TYPE_FOR_VNIC_TYPE.get(vnic_type)
                 if dev_type:
                     spec[pci_request.PCI_DEVICE_TYPE_TAG] = dev_type
@@ -2365,14 +2506,24 @@ class API:
                                            neutron_client=neutron)
                     if port.get('device_id', None):
                         raise exception.PortInUse(port_id=request.port_id)
+
                     deferred_ip = port.get('ip_allocation') == 'deferred'
+                    ipless_port = port.get('ip_allocation') == 'none'
                     # NOTE(carl_baldwin) A deferred IP port doesn't have an
                     # address here. If it fails to get one later when nova
                     # updates it with host info, Neutron will error which
                     # raises an exception.
-                    if not deferred_ip and not port.get('fixed_ips'):
+                    # NOTE(sbauza): We don't need to validate the
+                    # 'connectivity' attribute of the port's
+                    # 'binding:vif_details' to ensure it's 'l2', as Neutron
+                    # already verifies it.
+                    if (
+                        not (deferred_ip or ipless_port) and
+                        not port.get('fixed_ips')
+                    ):
                         raise exception.PortRequiresFixedIP(
                             port_id=request.port_id)
+
                     request.network_id = port['network_id']
                 else:
                     ports_needed_per_instance += 1
@@ -2699,7 +2850,7 @@ class API:
         # ...and retrieve the port details for the same reason, but only if
         # they're not already there because the fip-port-details extension is
         # present
-        if not self._has_fip_port_details_extension(context, client):
+        if not self.has_fip_port_details_extension(client=client):
             port_id = fip['port_id']
             try:
                 fip['port_details'] = client.show_port(
@@ -2727,7 +2878,7 @@ class API:
         # ...and retrieve the port details for the same reason, but only if
         # they're not already there because the fip-port-details extension is
         # present
-        if not self._has_fip_port_details_extension(context, client):
+        if not self.has_fip_port_details_extension(client=client):
             port_id = fip['port_id']
             try:
                 fip['port_details'] = client.show_port(
@@ -2766,7 +2917,7 @@ class API:
         # ...and retrieve the port details for the same reason, but only if
         # they're not already there because the fip-port-details extension is
         # present
-        if not self._has_fip_port_details_extension(context, client):
+        if not self.has_fip_port_details_extension(client=client):
             ports = {port['id']: port for port in client.list_ports(
                 **{'tenant_id': project_id})['ports']}
             for fip in fips:
@@ -2962,7 +3113,7 @@ class API:
         :raises: nova.exception.PortBindingActivationFailed if any port binding
             activation fails
         """
-        if not self.supports_port_binding_extension(context):
+        if not self.has_port_binding_extension(context):
             # If neutron isn't new enough yet for the port "binding-extended"
             # API extension, we just no-op. The port binding host will be
             # be updated in migrate_instance_finish, which is functionally OK,
@@ -3488,7 +3639,8 @@ class API:
         :raises: PortBindingDeletionFailed if port binding deletion fails.
         """
         # First check to see if the port binding extension is supported.
-        if not self.supports_port_binding_extension(context):
+        client = get_client(context)
+        if not self.has_port_binding_extension(client=client):
             LOG.info("Neutron extension '%s' is not supported; not cleaning "
                      "up port bindings for host %s.",
                      constants.PORT_BINDING_EXTENDED, host, instance=instance)
@@ -3511,15 +3663,15 @@ class API:
                   migration.get('status') == 'reverted')
         return instance.migration_context.get_pci_mapping_for_migration(revert)
 
-    def _get_port_pci_slot(self, context, instance, port):
-        """Find the PCI address of the device corresponding to the port.
+    def _get_port_pci_dev(self, context, instance, port):
+        """Find the PCI device corresponding to the port.
         Assumes the port is an SRIOV one.
 
         :param context: The request context.
         :param instance: The instance to which the port is attached.
         :param port: The Neutron port, as obtained from the Neutron API
             JSON form.
-        :return: The PCI address as a string, or None if unable to find.
+        :return: The PciDevice object, or None if unable to find.
         """
         # Find the port's PCIRequest, or return None
         for r in instance.pci_requests.requests:
@@ -3539,8 +3691,26 @@ class API:
             LOG.debug('No PCI device found for request %s',
                       request.request_id, instance=instance)
             return None
-        # Return the device's PCI address
-        return device.address
+        return device
+
+    def _update_port_pci_binding_profile(self, pci_dev, binding_profile):
+        """Update the binding profile dict with new PCI device data.
+
+        :param pci_dev: The PciDevice object to update the profile with.
+        :param binding_profile: The dict to update.
+        """
+        binding_profile.update({'pci_slot': pci_dev.address})
+        if binding_profile.get('card_serial_number'):
+            binding_profile.update({
+                'card_serial_number': pci_dev.card_serial_number})
+        if binding_profile.get('pf_mac_address'):
+            binding_profile.update({
+                'pf_mac_address': pci_utils.get_mac_by_pci_address(
+                    pci_dev.parent_addr)})
+        if binding_profile.get('vf_num'):
+            binding_profile.update({
+                'vf_num': pci_utils.get_vf_num_by_pci_address(
+                    pci_dev.address)})
 
     def _update_port_binding_for_instance(
             self, context, instance, host, migration=None,
@@ -3608,9 +3778,10 @@ class API:
                 # need to figure out the pci_slot from the InstancePCIRequest
                 # and PciDevice objects.
                 else:
-                    pci_slot = self._get_port_pci_slot(context, instance, p)
-                    if pci_slot:
-                        binding_profile.update({'pci_slot': pci_slot})
+                    pci_dev = self._get_port_pci_dev(context, instance, p)
+                    if pci_dev:
+                        self._update_port_pci_binding_profile(pci_dev,
+                                                              binding_profile)
                         updates[constants.BINDING_PROFILE] = binding_profile
 
             # NOTE(gibi): during live migration the conductor already sets the
@@ -3679,9 +3850,8 @@ class API:
         :param vif: The VIF in question.
         :param index: The index on the instance for the VIF.
         """
-        self._refresh_neutron_extensions_cache(context)
-        if constants.VNIC_INDEX_EXT in self.extensions:
-            neutron = get_client(context)
+        neutron = get_client(context)
+        if self.has_vnic_index_extension(client=neutron):
             port_req_body = {'port': {'vnic_index': index}}
             try:
                 neutron.update_port(vif['id'], port_req_body)
@@ -3704,10 +3874,11 @@ class API:
             either Segment extension isn't enabled in Neutron or if the network
             isn't configured for routing.
         """
-        if not self._has_segment_extension(context):
+        client = get_client(context, admin=True)
+
+        if not self.has_segment_extension(client=client):
             return []
 
-        client = get_client(context)
         try:
             # NOTE(sbauza): We can't use list_segments() directly because the
             # API is borked and returns both segments but also segmentation IDs
@@ -3734,10 +3905,11 @@ class API:
             extension isn't enabled in Neutron or the provided subnet doesn't
             have segments (if the related network isn't configured for routing)
         """
-        if not self._has_segment_extension(context):
+        client = get_client(context, admin=True)
+
+        if not self.has_segment_extension(client=client):
             return None
 
-        client = get_client(context)
         try:
             subnet = client.show_subnet(subnet_id)['subnet']
         except neutron_client_exc.NeutronClientException as e:

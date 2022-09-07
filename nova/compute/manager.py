@@ -84,6 +84,7 @@ from nova.objects import fields
 from nova.objects import instance as obj_instance
 from nova.objects import migrate_data as migrate_data_obj
 from nova.pci import request as pci_req_module
+from nova.pci import utils as pci_utils
 from nova.pci import whitelist
 from nova import safe_utils
 from nova.scheduler.client import query
@@ -402,6 +403,79 @@ class ComputeVirtAPI(virtapi.VirtAPI):
     def _default_error_callback(self, event_name, instance):
         raise exception.NovaException(_('Instance event failed'))
 
+    class _InstanceEvent:
+        EXPECTED = "expected"
+        WAITING = "waiting"
+        RECEIVED = "received"
+        RECEIVED_EARLY = "received early"
+        TIMED_OUT = "timed out"
+        RECEIVED_NOT_PROCESSED = "received but not processed"
+
+        def __init__(self, name: str, event: eventlet.event.Event) -> None:
+            self.name = name
+            self.event = event
+            self.status = self.EXPECTED
+            self.wait_time = None
+
+        def mark_as_received_early(self) -> None:
+            self.status = self.RECEIVED_EARLY
+
+        def is_received_early(self) -> bool:
+            return self.status == self.RECEIVED_EARLY
+
+        def _update_status_no_wait(self):
+            if self.status == self.EXPECTED and self.event.ready():
+                self.status = self.RECEIVED_NOT_PROCESSED
+
+        def wait(self) -> 'objects.InstanceExternalEvent':
+            self.status = self.WAITING
+            try:
+                with timeutils.StopWatch() as sw:
+                    instance_event = self.event.wait()
+            except eventlet.timeout.Timeout:
+                self.status = self.TIMED_OUT
+                self.wait_time = sw.elapsed()
+
+                raise
+
+            self.status = self.RECEIVED
+            self.wait_time = sw.elapsed()
+            return instance_event
+
+        def __str__(self) -> str:
+            self._update_status_no_wait()
+            if self.status == self.EXPECTED:
+                return f"{self.name}: expected but not received"
+            if self.status == self.RECEIVED:
+                return (
+                    f"{self.name}: received after waiting "
+                    f"{self.wait_time:.2f} seconds")
+            if self.status == self.TIMED_OUT:
+                return (
+                    f"{self.name}: timed out after "
+                    f"{self.wait_time:.2f} seconds")
+            return f"{self.name}: {self.status}"
+
+    @staticmethod
+    def _wait_for_instance_events(
+        instance: 'objects.Instance',
+        events: dict,
+        error_callback: ty.Callable,
+    ) -> None:
+        for event_name, event in events.items():
+            if event.is_received_early():
+                continue
+            else:
+                actual_event = event.wait()
+                if actual_event.status == 'completed':
+                    continue
+            # If we get here, we have an event that was not completed,
+            # nor skipped via exit_wait_early(). Decide whether to
+            # keep waiting by calling the error_callback() hook.
+            decision = error_callback(event_name, instance)
+            if decision is False:
+                break
+
     @contextlib.contextmanager
     def wait_for_instance_event(self, instance, event_names, deadline=300,
                                 error_callback=None):
@@ -454,9 +528,10 @@ class ComputeVirtAPI(virtapi.VirtAPI):
             name, tag = event_name
             event_name = objects.InstanceExternalEvent.make_key(name, tag)
             try:
-                events[event_name] = (
+                event = (
                     self._compute.instance_events.prepare_for_instance_event(
                         instance, name, tag))
+                events[event_name] = self._InstanceEvent(event_name, event)
             except exception.NovaException:
                 error_callback(event_name, instance)
                 # NOTE(danms): Don't wait for any of the events. They
@@ -468,23 +543,39 @@ class ComputeVirtAPI(virtapi.VirtAPI):
         except self._exit_early_exc as e:
             early_events = set([objects.InstanceExternalEvent.make_key(n, t)
                                 for n, t in e.events])
-        else:
-            early_events = set([])
 
-        with eventlet.timeout.Timeout(deadline):
-            for event_name, event in events.items():
-                if event_name in early_events:
-                    continue
-                else:
-                    actual_event = event.wait()
-                    if actual_event.status == 'completed':
-                        continue
-                # If we get here, we have an event that was not completed,
-                # nor skipped via exit_wait_early(). Decide whether to
-                # keep waiting by calling the error_callback() hook.
-                decision = error_callback(event_name, instance)
-                if decision is False:
-                    break
+            # If there are expected events that received early, mark them,
+            # so they won't be waited for later
+            for early_event_name in early_events:
+                if early_event_name in events:
+                    events[early_event_name].mark_as_received_early()
+
+        sw = timeutils.StopWatch()
+        sw.start()
+        try:
+            with eventlet.timeout.Timeout(deadline):
+                self._wait_for_instance_events(
+                    instance, events, error_callback)
+        except eventlet.timeout.Timeout:
+            LOG.warning(
+                'Timeout waiting for %(events)s for instance with '
+                'vm_state %(vm_state)s and task_state %(task_state)s. '
+                'Event states are: %(event_states)s',
+                {
+                    'events': list(events.keys()),
+                    'vm_state': instance.vm_state,
+                    'task_state': instance.task_state,
+                    'event_states':
+                        ', '.join([str(event) for event in events.values()]),
+                },
+                instance=instance)
+
+            raise
+
+        LOG.debug('Instance event wait completed in %i seconds for %s',
+                  sw.elapsed(),
+                  ','.join(x[0] for x in event_names),
+                  instance=instance)
 
     def update_compute_provider_status(self, context, rp_uuid, enabled):
         """Used to add/remove the COMPUTE_STATUS_DISABLED trait on the provider
@@ -6658,6 +6749,10 @@ class ComputeManager(manager.Manager):
             with excutils.save_and_reraise_exception(logger=LOG):
                 LOG.exception('Instance failed to spawn',
                               instance=instance)
+                # Set the image_ref back to initial image_ref because instance
+                # object might have been saved with image['id']
+                # https://bugs.launchpad.net/nova/+bug/1934094
+                instance.image_ref = shelved_image_ref
                 # Cleanup allocations created by the scheduler on this host
                 # since we failed to spawn the instance. We do this both if
                 # the instance claim failed with ComputeResourcesUnavailable
@@ -7438,7 +7533,16 @@ class ComputeManager(manager.Manager):
         # NOTE(lyarwood): Update the BDM with the modified new_cinfo and
         # correct volume_id returned by Cinder.
         save_volume_id = comp_ret['save_volume_id']
+
+        # NOTE(lyarwood): Overwrite the possibly stale serial and volume_id in
+        # the connection_info with the volume_id returned from Cinder. This
+        # could be the case during a volume migration where the new_cinfo here
+        # refers to the temporary volume *before* Cinder renames it to the
+        # original volume UUID at the end of the migration.
         new_cinfo['serial'] = save_volume_id
+        new_cinfo['volume_id'] = save_volume_id
+        if 'data' in new_cinfo:
+            new_cinfo['data']['volume_id'] = save_volume_id
         values = {
             'connection_info': jsonutils.dumps(new_cinfo),
             'source_type': 'volume',
@@ -8027,7 +8131,7 @@ class ComputeManager(manager.Manager):
                 LOG.info('Destination was ready for NUMA live migration, '
                          'but source is either too old, or is set to an '
                          'older upgrade level.', instance=instance)
-            if self.network_api.supports_port_binding_extension(ctxt):
+            if self.network_api.has_port_binding_extension(ctxt):
                 # Create migrate_data vifs if not provided by driver.
                 if 'vifs' not in migrate_data:
                     migrate_data.vifs = (
@@ -10816,6 +10920,17 @@ class ComputeManager(manager.Manager):
             profile['pci_slot'] = pci_dev.address
             profile['pci_vendor_info'] = ':'.join([pci_dev.vendor_id,
                                                    pci_dev.product_id])
+            if profile.get('card_serial_number'):
+                # Assume it is there since Nova makes sure that PCI devices
+                # tagged as remote-managed have a serial in PCI VPD.
+                profile['card_serial_number'] = pci_dev.card_serial_number
+            if profile.get('pf_mac_address'):
+                profile['pf_mac_address'] = pci_utils.get_mac_by_pci_address(
+                    pci_dev.parent_addr)
+            if profile.get('vf_num'):
+                profile['vf_num'] = pci_utils.get_vf_num_by_pci_address(
+                    pci_dev.address)
+
             mig_vif.profile = profile
             LOG.debug("Updating migrate VIF profile for port %(port_id)s:"
                       "%(profile)s", {'port_id': port_id,

@@ -19,6 +19,7 @@ import ddt
 import mock
 import testtools
 
+import nova.conf
 from nova import exception
 from nova import objects
 from nova.objects import fields
@@ -27,6 +28,8 @@ from nova import test
 from nova.tests.unit import fake_pci_device_pools as fake_pci
 from nova.tests.unit.image.fake import fake_image_obj
 from nova.virt import hardware as hw
+
+CONF = nova.conf.CONF
 
 
 class InstanceInfoTests(test.NoDBTestCase):
@@ -2753,7 +2756,7 @@ class VirtNUMAHostTopologyTestCase(test.NoDBTestCase):
         # the PCI device is found on host cell 1
         pci_stats = _create_pci_stats(1)
 
-        # ...threfore an instance without a PCI device should get host cell 2
+        # ...therefore an instance without a PCI device should get host cell 2
         instance_topology = hw.numa_fit_instance_to_host(
                 self.host, self.instance1, pci_stats=pci_stats)
         self.assertIsInstance(instance_topology, objects.InstanceNUMATopology)
@@ -2763,7 +2766,7 @@ class VirtNUMAHostTopologyTestCase(test.NoDBTestCase):
         # the PCI device is now found on host cell 2
         pci_stats = _create_pci_stats(2)
 
-        # ...threfore an instance without a PCI device should get host cell 1
+        # ...therefore an instance without a PCI device should get host cell 1
         instance_topology = hw.numa_fit_instance_to_host(
                 self.host, self.instance1, pci_stats=pci_stats)
         self.assertIsInstance(instance_topology, objects.InstanceNUMATopology)
@@ -5452,6 +5455,100 @@ class PCINUMAAffinityPolicyTest(test.NoDBTestCase):
             image_meta.properties.hw_pci_numa_affinity_policy = "fake"
 
 
+class PMUEnabledTest(test.NoDBTestCase):
+
+    def test_pmu_image_and_flavor_conflict(self):
+        """Tests that calling _validate_flavor_image_nostatus()
+        with an image that conflicts with the flavor raises but no
+        exception is raised if there is no conflict.
+        """
+        flavor = objects.Flavor(
+            name='foo', vcpus=1, memory_mb=512, root_gb=1,
+            extra_specs={'hw:pmu': "true"})
+        image_meta = objects.ImageMeta.from_dict({
+            'name': 'bar', 'properties': {'hw_pmu': False},
+        })
+        self.assertRaises(
+            exception.FlavorImageConflict,
+            hw.get_pmu_constraint,
+            flavor, image_meta)
+
+    def test_pmu_image_and_flavor_same_value(self):
+        # assert that if both the image and flavor are set to the same value
+        # no exception is raised and the function returns nothing.
+        flavor = objects.Flavor(
+            vcpus=1, memory_mb=512, root_gb=1, extra_specs={'hw:pmu': "true"})
+        image_meta = objects.ImageMeta.from_dict({
+            'properties': {'hw_pmu': True},
+        })
+        self.assertTrue(hw.get_pmu_constraint(flavor, image_meta))
+
+    def test_pmu_image_only(self):
+        # assert that if only the image metadata is set then it is valid
+        flavor = objects.Flavor(
+            vcpus=1, memory_mb=512, root_gb=1, extra_specs={})
+
+        # ensure string to bool conversion works for image metadata
+        # property by using "yes".
+        image_meta = objects.ImageMeta.from_dict({
+            'properties': {'hw_pmu': 'yes'},
+        })
+        self.assertTrue(hw.get_pmu_constraint(flavor, image_meta))
+
+    def test_pmu_flavor_only(self):
+        # assert that if only the flavor extra_spec is set then it is valid
+        # and test the string to bool conversion of "on" works.
+        flavor = objects.Flavor(
+            vcpus=1, memory_mb=512, root_gb=1, extra_specs={'hw:pmu': "on"})
+
+        image_meta = objects.ImageMeta.from_dict({'properties': {}})
+        self.assertTrue(hw.get_pmu_constraint(flavor, image_meta))
+
+
+@ddt.ddt
+class VIFMultiqueueEnabledTest(test.NoDBTestCase):
+
+    @ddt.unpack
+    @ddt.data(
+        # pass: no configuration
+        (None, None, False),
+        # pass: flavor-only configuration
+        ('yes', None, True),
+        # pass: image-only configuration
+        (None, False, False),
+        # pass: identical image and flavor configuration
+        ('yes', True, True),
+        # fail: mismatched image and flavor configuration
+        ('no', True, exception.FlavorImageConflict),
+    )
+    def test_get_vif_multiqueue_constraint(
+        self, flavor_policy, image_policy, expected,
+    ):
+        extra_specs = {}
+
+        if flavor_policy:
+            extra_specs['hw:vif_multiqueue_enabled'] = flavor_policy
+
+        image_meta_props = {}
+
+        if image_policy:
+            image_meta_props['hw_vif_multiqueue_enabled'] = image_policy
+
+        flavor = objects.Flavor(
+            name='foo', vcpus=2, memory_mb=1024, extra_specs=extra_specs)
+        image_meta = objects.ImageMeta.from_dict(
+            {'name': 'bar', 'properties': image_meta_props})
+
+        if isinstance(expected, type) and issubclass(expected, Exception):
+            self.assertRaises(
+                expected, hw.get_vif_multiqueue_constraint, flavor, image_meta,
+            )
+        else:
+            self.assertEqual(
+                expected, hw.get_vif_multiqueue_constraint(flavor, image_meta),
+            )
+
+
 @ddt.ddt
 class VTPMConfigTest(test.NoDBTestCase):
 
@@ -5570,3 +5667,243 @@ class RescuePropertyTestCase(test.NoDBTestCase):
         meta = objects.ImageMeta.from_dict({'disk_format': 'raw'})
         meta.properties = objects.ImageMetaProps.from_dict(props)
         self.assertEqual(expected, hw.check_hw_rescue_props(meta))
+
+
+class HostCellsSortingTestCase(test.NoDBTestCase):
+    # NOTE (IPO) It is possible to test all sorting cases with one defined
+    # host NUMA topo.
+    # We have 4 NUMA cells with the following properties:
+    # NUMA cell 0: have most cpu usage
+    # NUMA cell 1: will have most PCI available
+    # NUMA cell 2: have most free pcpus
+    # NUMA cell 3: have most available memory
+    # So it will be enough to check order of NUMA cell in resulting instance
+    # topo to check particular sorting case.
+
+    def setUp(self):
+        super(HostCellsSortingTestCase, self).setUp()
+
+        def _create_pci_stats(node, count):
+            test_dict = copy.copy(fake_pci.fake_pool_dict)
+            test_dict['numa_node'] = node
+            test_dict['vendor_id'] = '8086'
+            test_dict['product_id'] = 'fake-prod0'
+            test_dict['count'] = count
+            return stats.PciDeviceStats(
+                objects.NUMATopology(),
+                [objects.PciDevicePool.from_dict(test_dict)])
+
+        self.pci_stats = _create_pci_stats(1, 2)
+
+        self.host = objects.NUMATopology(cells=[
+            objects.NUMACell(
+                id=0,
+                cpuset=set([1, 2, 3, 4]),
+                pcpuset=set([1, 2, 3, 4]),
+                memory=4096,
+                cpu_usage=3,
+                memory_usage=2048,
+                pinned_cpus=set([1, 2]),
+                mempages=[objects.NUMAPagesTopology(
+                    size_kb=4, total=524288, used=0)],
+                siblings=[set([1]), set([2]), set([3]), set([4])]),
+            objects.NUMACell(
+                id=1,
+                cpuset=set([5, 6, 7, 8]),
+                pcpuset=set([5, 6, 7, 8]),
+                memory=4096,
+                cpu_usage=2,
+                memory_usage=2048,
+                pinned_cpus=set([5, 6]),
+                mempages=[objects.NUMAPagesTopology(
+                    size_kb=4, total=524288, used=0)],
+                siblings=[set([5]), set([6]), set([7]), set([8])]),
+            objects.NUMACell(
+                id=2,
+                cpuset=set([9, 10, 11, 12]),
+                pcpuset=set([9, 10, 11, 12]),
+                memory=4096,
+                cpu_usage=2,
+                memory_usage=2048,
+                pinned_cpus=set(),
+                mempages=[objects.NUMAPagesTopology(
+                    size_kb=4, total=524288, used=0)],
+                siblings=[set([9]), set([10]), set([11]), set([12])]),
+            objects.NUMACell(
+                id=3,
+                cpuset=set([13, 14, 15, 16]),
+                pcpuset=set([13, 14, 15, 16]),
+                memory=4096,
+                cpu_usage=2,
+                memory_usage=1024,
+                pinned_cpus=set([13, 14]),
+                mempages=[objects.NUMAPagesTopology(
+                    size_kb=4, total=524288, used=0)],
+                siblings=[set([13]), set([14]), set([15]), set([16])])
+        ])
+
+        self.instance0 = objects.InstanceNUMATopology(cells=[
+        objects.InstanceNUMACell(
+            id=0, cpuset=set([0]), pcpuset=set(), memory=2048),
+        objects.InstanceNUMACell(
+            id=1, cpuset=set([1]), pcpuset=set(), memory=2048),
+        objects.InstanceNUMACell(
+            id=2, cpuset=set([2]), pcpuset=set(), memory=2048),
+        objects.InstanceNUMACell(
+            id=3, cpuset=set([3]), pcpuset=set(), memory=2048)
+        ])
+
+        self.instance1 = objects.InstanceNUMATopology(cells=[
+        objects.InstanceNUMACell(
+            id=0, cpuset=set([0]), pcpuset=set(), memory=2048),
+        objects.InstanceNUMACell(
+            id=1, cpuset=set([1]), pcpuset=set(), memory=2048),
+        objects.InstanceNUMACell(
+            id=2, cpuset=set([2]), pcpuset=set(), memory=2048),
+        ])
+
+        self.instance2 = objects.InstanceNUMATopology(cells=[
+        objects.InstanceNUMACell(
+            id=0,
+            cpuset=set(),
+            pcpuset=set([0]),
+            memory=2048,
+            cpu_policy=fields.CPUAllocationPolicy.DEDICATED
+        ),
+        objects.InstanceNUMACell(
+            id=1,
+            cpuset=set(),
+            pcpuset=set([1]),
+            memory=2048,
+            cpu_policy=fields.CPUAllocationPolicy.DEDICATED
+        ),
+        objects.InstanceNUMACell(
+            id=2,
+            cpuset=set(),
+            pcpuset=set([2]),
+            memory=2048,
+            cpu_policy=fields.CPUAllocationPolicy.DEDICATED
+        )])
+
+    def assertInstanceNUMAcellOrder(self, list_to_check, instance_topo):
+        for cell, id in zip(instance_topo.cells, list_to_check):
+            self.assertEqual(cell.id, id)
+
+    def test_sort_host_numa_cell_num_equal_instance_cell_num(self):
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance0)
+        self.assertInstanceNUMAcellOrder([0, 1, 2, 3], instance_topology)
+
+    def test_sort_no_pci_stats_no_shared_cpu_policy(self):
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            True,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance2)
+        self.assertInstanceNUMAcellOrder([0, 1, 3], instance_topology)
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            False,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance2)
+        self.assertInstanceNUMAcellOrder([2, 3, 0], instance_topology)
+
+    def test_sort_no_pci_stats_shared_cpu_policy(self):
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            True,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance1)
+        self.assertInstanceNUMAcellOrder([0, 1, 2], instance_topology)
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            False,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance1)
+        self.assertInstanceNUMAcellOrder([3, 1, 2], instance_topology)
+
+    def test_sort_pci_stats_pci_req_no_shared_cpu_policy(self):
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            True,
+            group = 'compute')
+        pci_request = objects.InstancePCIRequest(count=1,
+            spec=[{'vendor_id': '8086', 'product_id': 'fake-prod0'}])
+        pci_reqs = [pci_request]
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance2,
+                pci_requests = pci_reqs,
+                pci_stats = self.pci_stats)
+        self.assertInstanceNUMAcellOrder([1, 0, 3], instance_topology)
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            False,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance2,
+                pci_requests = pci_reqs,
+                pci_stats = self.pci_stats)
+        self.assertInstanceNUMAcellOrder([1, 2, 3], instance_topology)
+
+    def test_sort_pci_stats_pci_req_shared_cpu_policy(self):
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            True,
+            group = 'compute')
+        pci_request = objects.InstancePCIRequest(count=1,
+            spec=[{'vendor_id': '8086', 'product_id': 'fake-prod0'}])
+        pci_reqs = [pci_request]
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance1,
+                pci_requests = pci_reqs,
+                pci_stats = self.pci_stats)
+        self.assertInstanceNUMAcellOrder([1, 0, 2], instance_topology)
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            False,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance1,
+                pci_requests = pci_reqs,
+                pci_stats = self.pci_stats)
+        self.assertInstanceNUMAcellOrder([1, 3, 2], instance_topology)
+
+    def test_sort_pci_stats_no_pci_req_no_shared_cpu_policy(self):
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            True,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance2,
+                pci_stats = self.pci_stats)
+        self.assertInstanceNUMAcellOrder([0, 3, 2], instance_topology)
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            False,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance2,
+                pci_stats = self.pci_stats)
+        self.assertInstanceNUMAcellOrder([2, 3, 0], instance_topology)
+
+    def test_sort_pci_stats_no_pci_req_shared_cpu_policy(self):
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            True,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance1,
+                pci_stats = self.pci_stats)
+        self.assertInstanceNUMAcellOrder([0, 2, 3], instance_topology)
+        CONF.set_override(
+            'packing_host_numa_cells_allocation_strategy',
+            False,
+            group = 'compute')
+        instance_topology = hw.numa_fit_instance_to_host(
+                self.host, self.instance1,
+                pci_stats = self.pci_stats)
+        self.assertInstanceNUMAcellOrder([3, 2, 0], instance_topology)

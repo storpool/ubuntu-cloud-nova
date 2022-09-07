@@ -164,6 +164,7 @@ class IronicDriver(virt_driver.ComputeDriver):
         "supports_trusted_certs": False,
         "supports_pcpus": False,
         "supports_accelerators": False,
+        "supports_remote_managed_ports": False,
 
         # Image type support flags
         "supports_image_type_aki": False,
@@ -963,6 +964,7 @@ class IronicDriver(virt_driver.ComputeDriver):
                           If false, pull fresh data from ironic.
         :returns: an InstanceInfo object
         """
+
         def _fetch_from_ironic(self, instance):
             try:
                 node = self._validate_instance_and_node(instance)

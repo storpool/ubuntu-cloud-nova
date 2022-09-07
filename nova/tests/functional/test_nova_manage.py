@@ -1,4 +1,5 @@
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
 #
@@ -20,7 +21,7 @@ import mock
 from neutronclient.common import exceptions as neutron_client_exc
 import os_resource_classes as orc
 from oslo_serialization import jsonutils
-from oslo_utils.fixture import uuidsentinel
+from oslo_utils.fixture import uuidsentinel as uuids
 from oslo_utils import timeutils
 
 from nova.cmd import manage
@@ -33,7 +34,7 @@ from nova import test
 from nova.tests import fixtures as nova_fixtures
 from nova.tests.functional import fixtures as func_fixtures
 from nova.tests.functional import integrated_helpers
-from nova.tests.functional import test_servers_resource_request
+from nova.tests.functional import test_servers_resource_request as test_res_req
 from nova import utils as nova_utils
 
 CONF = config.CONF
@@ -260,11 +261,16 @@ class TestNovaManageVolumeAttachmentRefresh(
 ):
     """Functional tests for 'nova-manage volume_attachment refresh'."""
 
+    # Required for any multiattach volume tests
+    microversion = '2.60'
+
     def setUp(self):
         super().setUp()
         self.tmpdir = self.useFixture(fixtures.TempDir()).path
         self.ctxt = context.get_admin_context()
         self.cli = manage.VolumeAttachmentCommands()
+        self.output = StringIO()
+        self.useFixture(fixtures.MonkeyPatch('sys.stdout', self.output))
         self.flags(my_ip='192.168.1.100')
         self.fake_connector = {
             'ip': '192.168.1.128',
@@ -285,7 +291,7 @@ class TestNovaManageVolumeAttachmentRefresh(
         self.assertEqual('create', actions[5]['action'])
 
     def test_refresh(self):
-        server = self._create_server()
+        server = self._create_server(networks='none')
         volume_id = self.cinder.IMAGE_BACKED_VOL
         self.api.post_server_volume(
             server['id'], {'volumeAttachment': {'volumeId': volume_id}})
@@ -297,6 +303,7 @@ class TestNovaManageVolumeAttachmentRefresh(
 
         bdm = objects.BlockDeviceMapping.get_by_volume_and_instance(
             self.ctxt, volume_id, server['id'])
+        original_device_name = bdm.device_name
         self.assertEqual(original_attachment_id, bdm.attachment_id)
 
         # The CinderFixture also stashes the attachment id in the
@@ -332,11 +339,17 @@ class TestNovaManageVolumeAttachmentRefresh(
         self.assertEqual(
             new_attachment_id, connection_info['data']['attachment_id'])
 
+        # Assert that the original device_name is stashed in the connector of
+        # the attachment within the fixture.
+        attachment_ref = attachments[new_attachment_id]
+        connector = attachment_ref.get('connector')
+        self.assertEqual(original_device_name, connector.get('device'))
+
         # Assert that we have actions we expect against the instance
         self._assert_instance_actions(server)
 
     def test_refresh_rpcapi_remove_volume_connection_rollback(self):
-        server = self._create_server()
+        server = self._create_server(networks='none')
         volume_id = self.cinder.IMAGE_BACKED_VOL
         self.api.post_server_volume(
             server['id'], {'volumeAttachment': {'volumeId': volume_id}})
@@ -382,7 +395,7 @@ class TestNovaManageVolumeAttachmentRefresh(
         self._assert_instance_actions(server)
 
     def test_refresh_cinder_attachment_update_rollback(self):
-        server = self._create_server()
+        server = self._create_server(networks='none')
         volume_id = self.cinder.IMAGE_BACKED_VOL
         self.api.post_server_volume(
             server['id'], {'volumeAttachment': {'volumeId': volume_id}})
@@ -439,7 +452,7 @@ class TestNovaManageVolumeAttachmentRefresh(
     def test_refresh_pre_cinderv3_without_attachment_id(self):
         """Test the refresh command when the bdm has no attachment_id.
         """
-        server = self._create_server()
+        server = self._create_server(networks='none')
         volume_id = self.cinder.IMAGE_BACKED_VOL
         self.api.post_server_volume(
             server['id'], {'volumeAttachment': {'volumeId': volume_id}})
@@ -480,6 +493,29 @@ class TestNovaManageVolumeAttachmentRefresh(
 
         # Assert that we have actions we expect against the instance
         self._assert_instance_actions(server)
+
+    def test_show_multiattach_volume(self):
+        """Test that the show command doesn't fail for multiattach volumes
+        """
+        volume_id = self.cinder.MULTIATTACH_VOL
+
+        # Launch two instances and attach the same multiattach volume to both
+        server_1 = self._create_server(networks='none')
+        self.api.post_server_volume(
+            server_1['id'], {'volumeAttachment': {'volumeId': volume_id}})
+        self._wait_for_volume_attach(server_1['id'], volume_id)
+
+        server_2 = self._create_server(networks='none')
+        self.api.post_server_volume(
+            server_2['id'], {'volumeAttachment': {'volumeId': volume_id}})
+        self._wait_for_volume_attach(server_2['id'], volume_id)
+
+        result = self.cli.show(
+            volume_id=volume_id, instance_uuid=server_1['id'])
+
+        # Assert that the command completes successfully, this was previously
+        # broken and documented under bug #1945452
+        self.assertEqual(0, result)
 
 
 class TestNovaManagePlacementHealAllocations(
@@ -1056,7 +1092,8 @@ class TestNovaManagePlacementHealAllocations(
 
 
 class TestNovaManagePlacementHealPortAllocations(
-    test_servers_resource_request.PortResourceRequestBasedSchedulingTestBase):
+    test_res_req.PortResourceRequestBasedSchedulingTestBase
+):
 
     def setUp(self):
         super(TestNovaManagePlacementHealPortAllocations, self).setUp()
@@ -1080,15 +1117,17 @@ class TestNovaManagePlacementHealPortAllocations(
         bound_port = self.neutron._ports[port_id]
         bound_port[constants.RESOURCE_REQUEST] = resource_request
 
+    @staticmethod
+    def _get_default_resource_request(port_uuid):
+        return {
+            "resources": {
+                orc.NET_BW_IGR_KILOBIT_PER_SEC: 1000,
+                orc.NET_BW_EGR_KILOBIT_PER_SEC: 1000},
+            "required": ["CUSTOM_PHYSNET2", "CUSTOM_VNIC_TYPE_NORMAL"]
+        }
+
     def _create_server_with_missing_port_alloc(
             self, ports, resource_request=None):
-        if not resource_request:
-            resource_request = {
-                "resources": {
-                    orc.NET_BW_IGR_KILOBIT_PER_SEC: 1000,
-                    orc.NET_BW_EGR_KILOBIT_PER_SEC: 1000},
-                "required": ["CUSTOM_PHYSNET2", "CUSTOM_VNIC_TYPE_NORMAL"]
-            }
 
         server = self._create_server(
             flavor=self.flavor,
@@ -1098,13 +1137,21 @@ class TestNovaManagePlacementHealPortAllocations(
         # This is a hack to simulate that we have a server that is missing
         # allocation for its port
         for port in ports:
-            self._add_resource_request_to_a_bound_port(
-                port['id'], resource_request)
+            if not resource_request:
+                rr = self._get_default_resource_request(port['id'])
+            else:
+                rr = resource_request
+
+            self._add_resource_request_to_a_bound_port(port['id'], rr)
 
         updated_ports = [
             self.neutron.show_port(port['id'])['port'] for port in ports]
 
         return server, updated_ports
+
+    def _get_resource_request(self, port):
+        res_req = port[constants.RESOURCE_REQUEST]
+        return res_req
 
     def _assert_placement_updated(self, server, ports):
         rsp = self.placement.get(
@@ -1130,7 +1177,7 @@ class TestNovaManagePlacementHealPortAllocations(
         # bridge RP
         total_request = collections.defaultdict(int)
         for port in ports:
-            port_request = port[constants.RESOURCE_REQUEST]['resources']
+            port_request = self._get_resource_request(port)['resources']
             for rc, amount in port_request.items():
                 total_request[rc] += amount
         self.assertEqual(total_request, network_allocations)
@@ -1355,83 +1402,64 @@ class TestNovaManagePlacementHealPortAllocations(
             'Successfully created allocations for instance', output)
         self.assertEqual(0, result)
 
-    def test_heal_port_allocation_not_enough_resources_for_port(self):
-        """Test that a port needs allocation but not enough inventory
-        available.
-        """
+    @staticmethod
+    def _get_too_big_resource_request():
         # The port will request too much NET_BW_IGR_KILOBIT_PER_SEC so there is
         # no RP on the host that can provide it.
-        resource_request = {
+        return {
             "resources": {
                 orc.NET_BW_IGR_KILOBIT_PER_SEC: 100000000000,
                 orc.NET_BW_EGR_KILOBIT_PER_SEC: 1000},
             "required": ["CUSTOM_PHYSNET2",
                          "CUSTOM_VNIC_TYPE_NORMAL"]
         }
+
+    def test_heal_port_allocation_not_enough_resources_for_port(self):
+        """Test that a port needs allocation but not enough inventory
+        available.
+        """
         server, ports = self._create_server_with_missing_port_alloc(
-            [self.neutron.port_1], resource_request)
+            [self.neutron.port_1], self._get_too_big_resource_request())
 
         # let's trigger a heal
         result = self.cli.heal_allocations(verbose=True, max_count=2)
 
         self._assert_placement_not_updated(server)
-        # Actually the ports were updated but the update is rolled back when
-        # the placement update failed
         self._assert_ports_not_updated(ports)
 
         output = self.output.getvalue()
         self.assertIn(
-            'Rolling back port update',
-            output)
-        self.assertIn(
-            'Failed to update allocations for consumer',
+            'Placement returned no allocation candidate',
             output)
         self.assertEqual(3, result)
 
-    def test_heal_port_allocation_no_rp_providing_required_traits(self):
-        """Test that a port needs allocation but no rp is providing the
-        required traits.
-        """
-        # The port will request a trait, CUSTOM_PHYSNET_NONEXISTENT that will
-        # not be provided by any RP on this host
-        resource_request = {
-            "resources": {
-                orc.NET_BW_IGR_KILOBIT_PER_SEC: 1000,
-                orc.NET_BW_EGR_KILOBIT_PER_SEC: 1000},
-            "required": ["CUSTOM_PHYSNET_NONEXISTENT",
-                         "CUSTOM_VNIC_TYPE_NORMAL"]
-        }
-        server, ports = self._create_server_with_missing_port_alloc(
-            [self.neutron.port_1], resource_request)
-
-        # let's trigger a heal
-        result = self.cli.heal_allocations(verbose=True, max_count=2)
-
-        self._assert_placement_not_updated(server)
-        self._assert_ports_not_updated(ports)
-
-        self.assertIn(
-            'No matching resource provider is available for healing the port '
-            'allocation',
-            self.output.getvalue())
-        self.assertEqual(3, result)
-
-    def test_heal_port_allocation_ambiguous_rps(self):
-        """Test that there are more than one matching RPs are available on the
-        compute.
-        """
-
-        # The port will request CUSTOM_VNIC_TYPE_DIRECT trait and there are
-        # two RPs that supports such trait.
-        resource_request = {
+    @staticmethod
+    def _get_ambiguous_resource_request():
+        return {
             "resources": {
                 orc.NET_BW_IGR_KILOBIT_PER_SEC: 1000,
                 orc.NET_BW_EGR_KILOBIT_PER_SEC: 1000},
             "required": ["CUSTOM_PHYSNET2",
                          "CUSTOM_VNIC_TYPE_DIRECT"]
         }
+
+    def test_heal_port_allocation_ambiguous_candidates(self):
+        """Test that there are more than one matching set of RPs are available
+        on the compute.
+        """
+        # Add bandwidth inventory for PF3 so that both FP2 and FP3 could
+        # support the port's request making the situation ambiguous
+        inventories = {
+            orc.NET_BW_IGR_KILOBIT_PER_SEC: {"total": 100000},
+            orc.NET_BW_EGR_KILOBIT_PER_SEC: {"total": 100000},
+        }
+        self._set_provider_inventories(
+            self.sriov_dev_rp_per_host[self.compute1_rp_uuid][self.PF3],
+            {"inventories": inventories}
+        )
+
         server, ports = self._create_server_with_missing_port_alloc(
-            [self.neutron.port_1], resource_request)
+            [self.neutron.port_1], self._get_ambiguous_resource_request())
 
         # let's trigger a heal
         result = self.cli.heal_allocations(verbose=True, max_count=2)
@@ -1440,7 +1468,7 @@ class TestNovaManagePlacementHealPortAllocations(
         self._assert_ports_not_updated(ports)
 
         self.assertIn(
-            'More than one matching resource provider',
+            ' Placement returned more than one possible allocation candidates',
             self.output.getvalue())
         self.assertEqual(3, result)
 
@@ -1588,12 +1616,18 @@ class TestNovaManagePlacementHealPortAllocations(
             output)
         self.assertEqual(7, result)
 
-    def _test_heal_port_allocation_placement_unavailable(
-            self, server, ports, error):
+    def test_heal_port_allocation_placement_unavailable_during_a_c(self):
+        server, ports = self._create_server_with_missing_port_alloc(
+            [self.neutron.port_1])
 
-        with mock.patch('nova.cmd.manage.PlacementCommands.'
-                        '_get_rps_in_tree_with_required_traits',
-                        side_effect=error):
+        # Simulate that placement is unavailable during the allocation
+        # candidate query. The safe_connect decorator signals that via
+        # returning None.
+        with mock.patch(
+            'nova.scheduler.client.report.SchedulerReportClient.'
+            'get_allocation_candidates',
+            return_value=None
+        ):
             result = self.cli.heal_allocations(verbose=True, max_count=2)
 
         self._assert_placement_not_updated(server)
@@ -1601,18 +1635,196 @@ class TestNovaManagePlacementHealPortAllocations(
 
         self.assertEqual(3, result)
 
-    def test_heal_port_allocation_placement_unavailable(self):
+    def test_heal_port_allocation_placement_unavailable_during_update(self):
         server, ports = self._create_server_with_missing_port_alloc(
             [self.neutron.port_1])
 
-        for error in [
-            exception.PlacementAPIConnectFailure(),
-            exception.ResourceProviderRetrievalFailed(uuid=uuidsentinel.rp1),
-            exception.ResourceProviderTraitRetrievalFailed(
-                uuid=uuidsentinel.rp1)]:
+        # Simulate that placement is unavailable during updating the
+        # allocation. The retry decorator signals that via returning False
+        with mock.patch(
+            'nova.scheduler.client.report.SchedulerReportClient.'
+            'put_allocations',
+            return_value=False
+        ):
+            result = self.cli.heal_allocations(verbose=True, max_count=2)
 
-            self._test_heal_port_allocation_placement_unavailable(
-                server, ports, error)
+        self._assert_placement_not_updated(server)
+        # Actually there was a port update but that was rolled back when
+        # the allocation update failed
+        self._assert_ports_not_updated(ports)
+
+        output = self.output.getvalue()
+        self.assertIn(
+            'Rolling back port update',
+            output)
+        self.assertEqual(3, result)
+
+
+class TestNovaManagePlacementHealPortAllocationsExtended(
+    TestNovaManagePlacementHealPortAllocations
+):
+    """Run the same tests as in TestNovaManagePlacementHealPortAllocations but
+    with the ExtendedResourceRequestNeutronFixture that automatically
+    translates the resource request in the ports used by these test to the
+    extended format. Note that this will test the extended format handling but
+    only with a single request group per port.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.neutron = self.useFixture(
+            test_res_req.ExtendedResourceRequestNeutronFixture(self))
+
+    def _get_resource_request(self, port):
+        # we assume a single resource request group in this test class
+        res_req = port[constants.RESOURCE_REQUEST][constants.REQUEST_GROUPS]
+        assert len(res_req) == 1
+        return res_req[0]
+
+    def _assert_port_updated(self, port_uuid):
+        updated_port = self.neutron.show_port(port_uuid)['port']
+        binding_profile = updated_port.get('binding:profile', {})
+        self.assertEqual(
+            {port_uuid: self.ovs_bridge_rp_per_host[self.compute1_rp_uuid]},
+            binding_profile['allocation'])
+
+
+class TestNovaManagePlacementHealPortAllocationsMultiGroup(
+    TestNovaManagePlacementHealPortAllocations
+):
+    """Run the same tests as in TestNovaManagePlacementHealPortAllocations but
+    with the MultiGroupResourceRequestNeutronFixture to test with extended
+    resource request with multiple groups.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.neutron = self.useFixture(
+            test_res_req.MultiGroupResourceRequestNeutronFixture(self))
+
+    @staticmethod
+    def _get_default_resource_request(port_uuid):
+        # we need unique uuids per port for multi port tests
+        g1 = getattr(uuids, port_uuid + "group1")
+        g2 = getattr(uuids, port_uuid + "group2")
+        return {
+            "request_groups": [
+                {
+                    "id": g1,
+                    "resources": {
+                        orc.NET_BW_IGR_KILOBIT_PER_SEC: 1000,
+                        orc.NET_BW_EGR_KILOBIT_PER_SEC: 1000},
+                    "required": [
+                        "CUSTOM_PHYSNET2", "CUSTOM_VNIC_TYPE_NORMAL"
+                    ]
+                },
+                {
+                    "id": g2,
+                    "resources": {
+                        orc.NET_PACKET_RATE_KILOPACKET_PER_SEC: 1000
+                    },
+                    "required": ["CUSTOM_VNIC_TYPE_NORMAL"]
+                }
+            ],
+            "same_subtree": [g1, g2],
+        }
+
+    @staticmethod
+    def _get_too_big_resource_request():
+        # The port will request too much NET_BW_IGR_KILOBIT_PER_SEC so there is
+        # no RP on the host that can provide it.
+        return {
+            "request_groups": [
+                {
+                    "id": uuids.g1,
+                    "resources": {
+                        orc.NET_BW_IGR_KILOBIT_PER_SEC: 10000000000000,
+                        orc.NET_BW_EGR_KILOBIT_PER_SEC: 1000},
+                    "required": [
+                        "CUSTOM_PHYSNET2", "CUSTOM_VNIC_TYPE_NORMAL"
+                    ]
+                },
+                {
+                    "id": uuids.g2,
+                    "resources": {
+                        orc.NET_PACKET_RATE_KILOPACKET_PER_SEC: 1000
+                    },
+                    "required": ["CUSTOM_VNIC_TYPE_NORMAL"]
+                }
+            ],
+            "same_subtree": [uuids.g1, uuids.g2],
+        }
+
+    @staticmethod
+    def _get_ambiguous_resource_request():
+        # ambiguity cannot really be simulated with multiple groups as that
+        # would require multiple OVS bridges instead of multiple PFs. So
+        # falling back to a single group in this specific test case.
+        return {
+            "request_groups": [
+                {
+                    "id": uuids.g1,
+                    "resources": {
+                        orc.NET_BW_IGR_KILOBIT_PER_SEC: 1000,
+                        orc.NET_BW_EGR_KILOBIT_PER_SEC: 1000},
+                    "required": [
+                        "CUSTOM_PHYSNET2", "CUSTOM_VNIC_TYPE_DIRECT"
+                    ]
+                },
+            ],
+            "same_subtree": [uuids.g1],
+        }
+
+    def _assert_placement_updated(self, server, ports):
+        rsp = self.placement.get(
+            '/allocations/%s' % server['id'],
+            version=1.28).body
+
+        allocations = rsp['allocations']
+
+        # we expect one allocation for the compute resources, one on the OVS
+        # bridge RP due to bandwidth and one on the OVS agent RP due to packet
+        # rate request
+        self.assertEqual(3, len(allocations))
+        self.assertEqual(
+            self._resources_from_flavor(self.flavor),
+            allocations[self.compute1_rp_uuid]['resources'])
+
+        self.assertEqual(server['tenant_id'], rsp['project_id'])
+        self.assertEqual(server['user_id'], rsp['user_id'])
+
+        ovs_bridge_allocations = allocations[
+            self.ovs_bridge_rp_per_host[self.compute1_rp_uuid]]['resources']
+        ovs_agent_allocations = allocations[
+            self.ovs_agent_rp_per_host[self.compute1_rp_uuid]]['resources']
+
+        total_bandwidth_request = collections.defaultdict(int)
+        total_packet_rate_request = collections.defaultdict(int)
+        for port in ports:
+            res_req = (port.get(constants.RESOURCE_REQUEST) or {})
+            for group in res_req.get(constants.REQUEST_GROUPS):
+                port_request = group['resources']
+                for rc, amount in port_request.items():
+                    if rc == orc.NET_PACKET_RATE_KILOPACKET_PER_SEC:
+                        total_packet_rate_request[rc] += amount
+                    else:
+                        total_bandwidth_request[rc] += amount
+
+        self.assertEqual(total_bandwidth_request, ovs_bridge_allocations)
+        self.assertEqual(total_packet_rate_request, ovs_agent_allocations)
+
+    def _assert_port_updated(self, port_uuid):
+        updated_port = self.neutron.show_port(port_uuid)['port']
+        binding_profile = updated_port.get('binding:profile', {})
+        self.assertEqual(
+            {
+                getattr(uuids, port_uuid + "group1"):
+                    self.ovs_bridge_rp_per_host[self.compute1_rp_uuid],
+                getattr(uuids, port_uuid + "group2"):
+                    self.ovs_agent_rp_per_host[self.compute1_rp_uuid],
+            },
+            binding_profile['allocation']
+        )
 
 
 class TestNovaManagePlacementSyncAggregates(

@@ -1119,7 +1119,7 @@ Active:          8381604 kB
         pci_dev = fakelibvirt.NodeDevice(
             self.host._get_connection(),
             xml=fake_libvirt_data._fake_NodeDevXml[dev_name])
-        actual_vf = self.host._get_pcidev_info(dev_name, pci_dev, [], [])
+        actual_vf = self.host._get_pcidev_info(dev_name, pci_dev, [], [], [])
         expect_vf = {
             "dev_id": dev_name, "address": "0000:04:11.7",
             "product_id": '1520', "numa_node": 0,
@@ -1135,7 +1135,9 @@ Active:          8381604 kB
     def test_get_pcidev_info(self, mock_get_ifname):
         devs = {
             "pci_0000_04_00_3", "pci_0000_04_10_7", "pci_0000_04_11_7",
-            "pci_0000_04_00_1", "pci_0000_03_00_0", "pci_0000_03_00_1"
+            "pci_0000_04_00_1", "pci_0000_03_00_0", "pci_0000_03_00_1",
+            "pci_0000_82_00_0", "pci_0000_82_00_3", "pci_0001_82_00_3",
+            "pci_0002_82_00_3",
         }
         node_devs = {}
         for dev_name in devs:
@@ -1150,10 +1152,12 @@ Active:          8381604 kB
                         xml=fake_libvirt_data._fake_NodeDevXml[child]))
         net_devs = [
             dev for dev in node_devs.values() if dev.name() not in devs]
+        pci_devs = [
+            dev for dev in node_devs.values() if dev.name() in devs]
 
         name = "pci_0000_04_00_3"
         actual_vf = self.host._get_pcidev_info(
-            name, node_devs[name], net_devs, [])
+            name, node_devs[name], net_devs, [], [])
         expect_vf = {
             "dev_id": "pci_0000_04_00_3",
             "address": "0000:04:00.3",
@@ -1167,7 +1171,7 @@ Active:          8381604 kB
 
         name = "pci_0000_04_10_7"
         actual_vf = self.host._get_pcidev_info(
-            name, node_devs[name], net_devs, [])
+            name, node_devs[name], net_devs, [], [])
         expect_vf = {
             "dev_id": "pci_0000_04_10_7",
             "address": "0000:04:10.7",
@@ -1186,7 +1190,7 @@ Active:          8381604 kB
 
         name = "pci_0000_04_11_7"
         actual_vf = self.host._get_pcidev_info(
-            name, node_devs[name], net_devs, [])
+            name, node_devs[name], net_devs, [], [])
         expect_vf = {
             "dev_id": "pci_0000_04_11_7",
             "address": "0000:04:11.7",
@@ -1205,7 +1209,7 @@ Active:          8381604 kB
 
         name = "pci_0000_04_00_1"
         actual_vf = self.host._get_pcidev_info(
-            name, node_devs[name], net_devs, [])
+            name, node_devs[name], net_devs, [], [])
         expect_vf = {
             "dev_id": "pci_0000_04_00_1",
             "address": "0000:04:00.1",
@@ -1219,7 +1223,7 @@ Active:          8381604 kB
 
         name = "pci_0000_03_00_0"
         actual_vf = self.host._get_pcidev_info(
-            name, node_devs[name], net_devs, [])
+            name, node_devs[name], net_devs, [], [])
         expect_vf = {
             "dev_id": "pci_0000_03_00_0",
             "address": "0000:03:00.0",
@@ -1233,7 +1237,7 @@ Active:          8381604 kB
 
         name = "pci_0000_03_00_1"
         actual_vf = self.host._get_pcidev_info(
-            name, node_devs[name], net_devs, [])
+            name, node_devs[name], net_devs, [], [])
         expect_vf = {
             "dev_id": "pci_0000_03_00_1",
             "address": "0000:03:00.1",
@@ -1243,6 +1247,81 @@ Active:          8381604 kB
             "label": 'label_15b3_1013',
             "dev_type": obj_fields.PciDeviceType.SRIOV_PF,
             }
+        self.assertEqual(expect_vf, actual_vf)
+
+        # Parent PF with a VPD cap.
+        name = "pci_0000_82_00_0"
+        actual_pf = self.host._get_pcidev_info(
+            name, node_devs[name], net_devs, [], pci_devs)
+        expect_pf = {
+            "dev_id": "pci_0000_82_00_0",
+            "address": "0000:82:00.0",
+            "product_id": "a2d6",
+            "numa_node": 1,
+            "vendor_id": "15b3",
+            "label": "label_15b3_a2d6",
+            "dev_type": obj_fields.PciDeviceType.SRIOV_PF,
+            "capabilities": {
+                # Should be obtained from the parent PF in this case.
+                "vpd": {"card_serial_number": "MT2113X00000"}},
+        }
+        self.assertEqual(expect_pf, actual_pf)
+
+        # A VF without a VPD cap with a parent PF that has a VPD cap.
+        name = "pci_0000_82_00_3"
+        actual_vf = self.host._get_pcidev_info(
+            name, node_devs[name], net_devs, [], pci_devs)
+        expect_vf = {
+            "dev_id": "pci_0000_82_00_3",
+            "address": "0000:82:00.3",
+            "parent_addr": "0000:82:00.0",
+            "product_id": "101e",
+            "numa_node": 1,
+            "vendor_id": "15b3",
+            "label": "label_15b3_101e",
+            "dev_type": obj_fields.PciDeviceType.SRIOV_VF,
+            "capabilities": {
+                # Should be obtained from the parent PF in this case.
+                "vpd": {"card_serial_number": "MT2113X00000"}},
+        }
+        self.assertEqual(expect_vf, actual_vf)
+
+        # A VF with a VPD cap without a test parent dev (used to check the
+        # VPD code path when a VF's own VPD capability is used).
+        name = "pci_0001_82_00_3"
+        actual_vf = self.host._get_pcidev_info(
+            name, node_devs[name], net_devs, [], pci_devs)
+        expect_vf = {
+            "dev_id": "pci_0001_82_00_3",
+            "address": "0001:82:00.3",
+            "parent_addr": "0001:82:00.0",
+            "product_id": "101e",
+            "numa_node": 1,
+            "vendor_id": "15b3",
+            "label": "label_15b3_101e",
+            "dev_type": obj_fields.PciDeviceType.SRIOV_VF,
+            "capabilities": {
+                # Should be obtained from the parent PF in this case.
+                "vpd": {"card_serial_number": "MT2113XBEEF0"}},
+        }
+
+        # A VF without a VPD cap and without a test parent dev
+        # (used to check the code path where a VF VPD capability is
+        # checked but is not present and a parent PF info is not available).
+        name = "pci_0002_82_00_3"
+        actual_vf = self.host._get_pcidev_info(
+            name, node_devs[name], net_devs, [], pci_devs)
+        expect_vf = {
+            "dev_id": "pci_0002_82_00_3",
+            "address": "0002:82:00.3",
+            "parent_addr": "0002:82:00.0",
+            "product_id": "101e",
+            "numa_node": 1,
+            "vendor_id": "15b3",
+            "label": "label_15b3_101e",
+            "dev_type": obj_fields.PciDeviceType.SRIOV_VF,
+        }
+
         self.assertEqual(expect_vf, actual_vf)
 
     def test_list_pci_devices(self):
@@ -1737,6 +1816,16 @@ cg /cgroup/memory cg opt1,opt2 0 0
         """
         self.assertTrue(self.host.supports_secure_boot)
 
+    @mock.patch.object(fakelibvirt.virConnect, "getLibVersion")
+    def test_supports_remote_managed_ports__true(self, mock_libversion):
+        mock_libversion.return_value = 7009000
+        self.assertTrue(self.host.supports_remote_managed_ports)
+
+    @mock.patch.object(fakelibvirt.virConnect, "getLibVersion")
+    def test_supports_remote_managed_ports__false(self, mock_libversion):
+        mock_libversion.return_value = 7008000
+        self.assertFalse(self.host.supports_remote_managed_ports)
+
     @mock.patch.object(host.Host, 'loaders', new_callable=mock.PropertyMock)
     @mock.patch.object(host.Host, 'get_canonical_machine_type')
     def test_get_loader(self, mock_get_mtype, mock_loaders):
@@ -1810,6 +1899,14 @@ cg /cgroup/memory cg opt1,opt2 0 0
         # which is what we want
         loader = self.host.get_loader('x86_64', 'q35', has_secure_boot=True)
         self.assertIsNotNone(loader)
+
+        # check that SMM bool is false as we don't need it
+        self.assertFalse(loader[2])
+
+        # check that we get SMM bool correctly (True) when required
+        loaders[0]['features'].append('requires-smm')
+        loader = self.host.get_loader('x86_64', 'q35', has_secure_boot=True)
+        self.assertTrue(loader[2])
 
         # while it should fail here since we don't want it now
         self.assertRaises(

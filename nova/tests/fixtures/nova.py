@@ -17,10 +17,12 @@
 """Fixtures for Nova tests."""
 
 import collections
+import contextlib
 from contextlib import contextmanager
 import functools
 import logging as std_logging
 import os
+import time
 import warnings
 
 import eventlet
@@ -31,6 +33,8 @@ from openstack import service_description
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_db import exception as db_exc
+from oslo_db.sqlalchemy import enginefacade
+from oslo_db.sqlalchemy import test_fixtures as db_fixtures
 from oslo_log import log as logging
 import oslo_messaging as messaging
 from oslo_messaging import conffixture as messaging_conffixture
@@ -64,7 +68,6 @@ CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 
 DB_SCHEMA = collections.defaultdict(str)
-SESSION_CONFIGURED = False
 PROJECT_ID = '6f70656e737461636b20342065766572'
 
 
@@ -102,6 +105,7 @@ class NullHandler(std_logging.Handler):
     log_fixture.get_logging_handle_error_fixture to detect formatting errors in
     debug level logs without saving the logs.
     """
+
     def handle(self, record):
         self.format(record)
 
@@ -172,6 +176,9 @@ class StandardLogging(fixtures.Fixture):
                 'migrate.versioning.api').setLevel(std_logging.WARNING)
             # Or alembic for model comparisons.
             std_logging.getLogger('alembic').setLevel(std_logging.WARNING)
+            # Or oslo_db provisioning steps
+            std_logging.getLogger('oslo_db.sqlalchemy').setLevel(
+                std_logging.WARNING)
 
         # At times we end up calling back into main() functions in
         # testing. This has the possibility of calling logging.setup
@@ -198,6 +205,18 @@ class DatabasePoisonFixture(fixtures.Fixture):
             'oslo_db.sqlalchemy.enginefacade._TransactionFactory.'
             '_create_session',
             self._poison_configure))
+
+        # NOTE(gibi): not just _create_session indicates a manipulation on the
+        # DB but actually any operation that actually initializes (starts) a
+        # transaction factory. If a test does this without using the Database
+        # fixture then that test i) actually a database test and should declare
+        # it so ii) actually manipulates a global state without proper cleanup
+        # and test isolation. This could lead that later tests are failing with
+        # the error: oslo_db.sqlalchemy.enginefacade.AlreadyStartedError: this
+        # TransactionFactory is already started
+        self.useFixture(fixtures.MonkeyPatch(
+           'oslo_db.sqlalchemy.enginefacade._TransactionFactory._start',
+           self._poison_configure))
 
     def _poison_configure(self, *a, **k):
         # If you encounter this error, you might be tempted to just not
@@ -349,6 +368,7 @@ class CheatingSerializer(rpc.RequestContextSerializer):
     Unless we had per-service config and database layer state for
     the fake services we start, this is a reasonable cheat.
     """
+
     def serialize_context(self, context):
         """Serialize context with the db_connection inside."""
         values = super(CheatingSerializer, self).serialize_context(context)
@@ -377,6 +397,7 @@ class CellDatabases(fixtures.Fixture):
     Passing default=True tells the fixture which database should
     be given to code that doesn't target a specific cell.
     """
+
     def __init__(self):
         self._ctxt_mgrs = {}
         self._last_ctxt_mgr = None
@@ -387,7 +408,7 @@ class CellDatabases(fixtures.Fixture):
         # to point to a cell, we need to take an exclusive lock to
         # prevent any other calls to get_context_manager() until we
         # reset to the default.
-        self._cell_lock = lockutils.ReaderWriterLock()
+        self._cell_lock = ReaderWriterLock()
 
     def _cache_schema(self, connection_str):
         # NOTE(melwitt): See the regular Database fixture for why
@@ -431,6 +452,13 @@ class CellDatabases(fixtures.Fixture):
         #     yield to do the actual work. We can do schedulable things
         #     here and not exclude other threads from making progress.
         #     If an exception is raised, we capture that and save it.
+        #     Note that it is possible that another thread has changed the
+        #     global state (step #2) after we released the writer lock but
+        #     before we acquired the reader lock. If this happens, we will
+        #     detect the global state change and retry step #2 a limited number
+        #     of times. If we happen to race repeatedly with another thread and
+        #     exceed our retry limit, we will give up and raise a RuntimeError,
+        #     which will fail the test.
         #  4. If we changed state in #2, we need to change it back. So we grab
         #     a writer lock again and do that.
         #  5. Finally, if an exception was raised in #3 while state was
@@ -449,29 +477,47 @@ class CellDatabases(fixtures.Fixture):
 
         raised_exc = None
 
-        with self._cell_lock.write_lock():
-            if cell_mapping is not None:
-                # This assumes the next local DB access is the same cell that
-                # was targeted last time.
-                self._last_ctxt_mgr = desired
+        def set_last_ctxt_mgr():
+            with self._cell_lock.write_lock():
+                if cell_mapping is not None:
+                    # This assumes the next local DB access is the same cell
+                    # that was targeted last time.
+                    self._last_ctxt_mgr = desired
 
-        with self._cell_lock.read_lock():
-            if self._last_ctxt_mgr != desired:
-                # NOTE(danms): This is unlikely to happen, but it's possible
-                # another waiting writer changed the state between us letting
-                # it go and re-acquiring as a reader. If lockutils supported
-                # upgrading and downgrading locks, this wouldn't be a problem.
-                # Regardless, assert that it is still as we left it here
-                # so we don't hit the wrong cell. If this becomes a problem,
-                # we just need to retry the write section above until we land
-                # here with the cell we want.
-                raise RuntimeError('Global DB state changed underneath us')
+        # Set last context manager to the desired cell's context manager.
+        set_last_ctxt_mgr()
 
+        # Retry setting the last context manager if we detect that a writer
+        # changed global DB state before we take the read lock.
+        for retry_time in range(0, 3):
             try:
-                with self._real_target_cell(context, cell_mapping) as ccontext:
-                    yield ccontext
-            except Exception as exc:
-                raised_exc = exc
+                with self._cell_lock.read_lock():
+                    if self._last_ctxt_mgr != desired:
+                        # NOTE(danms): This is unlikely to happen, but it's
+                        # possible another waiting writer changed the state
+                        # between us letting it go and re-acquiring as a
+                        # reader. If lockutils supported upgrading and
+                        # downgrading locks, this wouldn't be a problem.
+                        # Regardless, assert that it is still as we left it
+                        # here so we don't hit the wrong cell. If this becomes
+                        # a problem, we just need to retry the write section
+                        # above until we land here with the cell we want.
+                        raise RuntimeError(
+                            'Global DB state changed underneath us')
+                    try:
+                        with self._real_target_cell(
+                            context, cell_mapping
+                        ) as ccontext:
+                            yield ccontext
+                    except Exception as exc:
+                        raised_exc = exc
+                    # Leave the retry loop after calling target_cell
+                    break
+            except RuntimeError:
+                # Give other threads a chance to make progress, increasing the
+                # wait time between attempts.
+                time.sleep(retry_time)
+                set_last_ctxt_mgr()
 
         with self._cell_lock.write_lock():
             # Once we have returned from the context, we need
@@ -608,57 +654,69 @@ class Database(fixtures.Fixture):
         """
         super().__init__()
 
-        # NOTE(pkholkin): oslo_db.enginefacade is configured in tests the
-        # same way as it is done for any other service that uses DB
-        global SESSION_CONFIGURED
-        if not SESSION_CONFIGURED:
-            main_db_api.configure(CONF)
-            api_db_api.configure(CONF)
-            SESSION_CONFIGURED = True
-
         assert database in {'main', 'api'}, f'Unrecognized database {database}'
+        if database == 'api':
+            assert connection is None, 'Not supported for the API database'
 
         self.database = database
         self.version = version
+        self.connection = connection
 
-        if database == 'main':
-            if connection is not None:
+    def setUp(self):
+        super().setUp()
+
+        if self.database == 'main':
+
+            if self.connection is not None:
                 ctxt_mgr = main_db_api.create_context_manager(
-                    connection=connection)
+                    connection=self.connection)
                 self.get_engine = ctxt_mgr.writer.get_engine
             else:
+                # NOTE(gibi): this injects a new factory for each test and
+                # cleans it up at then end of the test case. This way we can
+                # let each test configure the factory so we can avoid having a
+                # global flag guarding against factory re-configuration
+                new_engine = enginefacade.transaction_context()
+                self.useFixture(
+                    db_fixtures.ReplaceEngineFacadeFixture(
+                        main_db_api.context_manager, new_engine))
+                main_db_api.configure(CONF)
+
                 self.get_engine = main_db_api.get_engine
-        elif database == 'api':
-            assert connection is None, 'Not supported for the API database'
+        elif self.database == 'api':
+            # NOTE(gibi): similar note applies here as for the main_db_api
+            # above
+            new_engine = enginefacade.transaction_context()
+            self.useFixture(
+                db_fixtures.ReplaceEngineFacadeFixture(
+                    api_db_api.context_manager, new_engine))
+            api_db_api.configure(CONF)
 
             self.get_engine = api_db_api.get_engine
 
-    def setUp(self):
-        super(Database, self).setUp()
-        self.reset()
+        self._apply_schema()
+
         self.addCleanup(self.cleanup)
 
-    def _cache_schema(self):
+    def _apply_schema(self):
         global DB_SCHEMA
         if not DB_SCHEMA[(self.database, self.version)]:
+            # apply and cache schema
             engine = self.get_engine()
             conn = engine.connect()
             migration.db_sync(database=self.database, version=self.version)
             DB_SCHEMA[(self.database, self.version)] = "".join(
                 line for line in conn.connection.iterdump())
-            engine.dispose()
+        else:
+            # apply the cached schema
+            engine = self.get_engine()
+            conn = engine.connect()
+            conn.connection.executescript(
+                DB_SCHEMA[(self.database, self.version)])
 
     def cleanup(self):
         engine = self.get_engine()
         engine.dispose()
-
-    def reset(self):
-        engine = self.get_engine()
-        engine.dispose()
-        self._cache_schema()
-        conn = engine.connect()
-        conn.connection.executescript(
-            DB_SCHEMA[(self.database, self.version)])
 
 
 class DefaultFlavorsFixture(fixtures.Fixture):
@@ -749,6 +807,9 @@ class WarningsFixture(fixtures.Fixture):
 
     def setUp(self):
         super(WarningsFixture, self).setUp()
+
+        self._original_warning_filters = warnings.filters[:]
+
         # NOTE(sdague): Make deprecation warnings only happen once. Otherwise
         # this gets kind of crazy given the way that upstream python libs use
         # this.
@@ -786,16 +847,54 @@ class WarningsFixture(fixtures.Fixture):
             'error', message='Evaluating non-mapped column expression',
             category=sqla_exc.SAWarning)
 
-        # Enable deprecation warnings to capture upcoming SQLAlchemy changes
+        # Enable deprecation warnings for nova itself to capture upcoming
+        # SQLAlchemy changes
+
+        warnings.filterwarnings(
+            'ignore',
+            category=sqla_exc.SADeprecationWarning)
 
         warnings.filterwarnings(
             'error',
             module='nova',
             category=sqla_exc.SADeprecationWarning)
 
-        # TODO(stephenfin): Remove once we fix this is oslo.db 10.0.1 or so
+        # ...but filter everything out until we get around to fixing them
+        # TODO(stephenfin): Fix all of these
+
         warnings.filterwarnings(
             'ignore',
+            module='nova',
+            message=r'The current statement is being autocommitted .*',
+            category=sqla_exc.SADeprecationWarning)
+
+        warnings.filterwarnings(
+            'ignore',
+            module='nova',
+            message=r'The Column.copy\(\) method is deprecated .*',
+            category=sqla_exc.SADeprecationWarning)
+
+        warnings.filterwarnings(
+            'ignore',
+            module='nova',
+            message=r'The Connection.connect\(\) method is considered .*',
+            category=sqla_exc.SADeprecationWarning)
+
+        warnings.filterwarnings(
+            'ignore',
+            module='nova',
+            message=r'Using strings to indicate column or relationship .*',
+            category=sqla_exc.SADeprecationWarning)
+
+        warnings.filterwarnings(
+            'ignore',
+            module='nova',
+            message=r'Using strings to indicate relationship names .*',
+            category=sqla_exc.SADeprecationWarning)
+
+        warnings.filterwarnings(
+            'ignore',
+            module='nova',
             message=r'Invoking and_\(\) without arguments is deprecated, .*',
             category=sqla_exc.SADeprecationWarning)
 
@@ -805,7 +904,10 @@ class WarningsFixture(fixtures.Fixture):
             message='Implicit coercion of SELECT and textual SELECT .*',
             category=sqla_exc.SADeprecationWarning)
 
-        self.addCleanup(warnings.resetwarnings)
+        self.addCleanup(self._reset_warning_filters)
+
+    def _reset_warning_filters(self):
+        warnings.filters[:] = self._original_warning_filters
 
 
 class ConfPatcher(fixtures.Fixture):
@@ -860,6 +962,11 @@ class OSAPIFixture(fixtures.Fixture):
     - resp.content - the body of the response
     - resp.headers - dictionary of HTTP headers returned
 
+    This fixture also has the following clients with various differences:
+
+        self.admin_api - Project user with is_admin=True and the "admin" role
+        self.reader_api - Project user with only the "reader" role
+        self.other_api - Project user with only the "other" role
     """
 
     def __init__(
@@ -923,9 +1030,17 @@ class OSAPIFixture(fixtures.Fixture):
             base_url += '/' + self.project_id
 
         self.api = client.TestOpenStackClient(
-            'fake', base_url, project_id=self.project_id)
+            'fake', base_url, project_id=self.project_id,
+            roles=['reader', 'member'])
         self.admin_api = client.TestOpenStackClient(
-            'admin', base_url, project_id=self.project_id)
+            'admin', base_url, project_id=self.project_id,
+            roles=['reader', 'member', 'admin'])
+        self.reader_api = client.TestOpenStackClient(
+            'reader', base_url, project_id=self.project_id,
+            roles=['reader'])
+        self.other_api = client.TestOpenStackClient(
+            'other', base_url, project_id=self.project_id,
+            roles=['other'])
         # Provide a way to access the wsgi application to tests using
         # the fixture.
         self.app = app
@@ -942,8 +1057,9 @@ class OSAPIFixture(fixtures.Fixture):
             user_id = env['HTTP_X_AUTH_USER']
             project_id = env['HTTP_X_AUTH_PROJECT_ID']
             is_admin = user_id == 'admin'
+            roles = env['HTTP_X_ROLES'].split(',')
             return context.RequestContext(
-                user_id, project_id, is_admin=is_admin, **kwargs)
+                user_id, project_id, is_admin=is_admin, roles=roles, **kwargs)
 
         self.useFixture(fixtures.MonkeyPatch(
             'nova.api.auth.NovaKeystoneContext._create_context', fake_ctx))
@@ -960,6 +1076,7 @@ class OSMetadataServer(fixtures.Fixture):
     interactions needed.
 
     """
+
     def setUp(self):
         super(OSMetadataServer, self).setUp()
         # in order to run these in tests we need to bind only to local
@@ -1089,6 +1206,7 @@ class SynchronousThreadPoolExecutorFixture(fixtures.Fixture):
 
     Replace the GreenThreadPoolExecutor with the SynchronousExecutor.
     """
+
     def setUp(self):
         super(SynchronousThreadPoolExecutorFixture, self).setUp()
         self.useFixture(fixtures.MonkeyPatch(
@@ -1097,6 +1215,7 @@ class SynchronousThreadPoolExecutorFixture(fixtures.Fixture):
 
 class BannedDBSchemaOperations(fixtures.Fixture):
     """Ban some operations for migrations"""
+
     def __init__(self, banned_resources=None):
         super(BannedDBSchemaOperations, self).__init__()
         self._banned_resources = banned_resources or []
@@ -1120,6 +1239,7 @@ class BannedDBSchemaOperations(fixtures.Fixture):
 
 class ForbidNewLegacyNotificationFixture(fixtures.Fixture):
     """Make sure the test fails if new legacy notification is added"""
+
     def __init__(self):
         super(ForbidNewLegacyNotificationFixture, self).__init__()
         self.notifier = rpc.LegacyValidatingNotifier
@@ -1213,6 +1333,7 @@ class PrivsepFixture(fixtures.Fixture):
     """Disable real privsep checking so we can test the guts of methods
     decorated with sys_admin_pctxt.
     """
+
     def setUp(self):
         super(PrivsepFixture, self).setUp()
         self.useFixture(fixtures.MockPatchObject(
@@ -1265,6 +1386,7 @@ class DownCellFixture(fixtures.Fixture):
             # List services with down cells.
             self.admin_api.api_get('/os-services')
     """
+
     def __init__(self, down_cell_mappings=None):
         self.down_cell_mappings = down_cell_mappings
 
@@ -1366,6 +1488,7 @@ class AvailabilityZoneFixture(fixtures.Fixture):
     requested when creating a server otherwise the instance.availabilty_zone
     or default_availability_zone is returned.
     """
+
     def __init__(self, zones):
         self.zones = zones
 
@@ -1402,6 +1525,7 @@ class KSAFixture(fixtures.Fixture):
     """Lets us initialize an openstack.connection.Connection by stubbing the
     auth plugin.
     """
+
     def setUp(self):
         super(KSAFixture, self).setUp()
         self.mock_load_auth = self.useFixture(fixtures.MockPatch(
@@ -1530,6 +1654,7 @@ class PropagateTestCaseIdToChildEventlets(fixtures.Fixture):
     https://bugs.launchpad.net/nova/+bug/1946339
 
     """
+
     def __init__(self, test_case_id):
         self.test_case_id = test_case_id
 
@@ -1600,3 +1725,37 @@ class PropagateTestCaseIdToChildEventlets(fixtures.Fixture):
         # our initialization to the child eventlet
         self.useFixture(
             fixtures.MonkeyPatch('nova.utils.spawn_n', wrapped_spawn_n))
+
+
+class ReaderWriterLock(lockutils.ReaderWriterLock):
+    """Wrap oslo.concurrency lockutils.ReaderWriterLock to support eventlet.
+
+    As of fasteners >= 0.15, the workaround code to use eventlet.getcurrent()
+    if eventlet patching is detected has been removed and
+    threading.current_thread is being used instead. Although we are running in
+    a greenlet in our test environment, we are not running in a greenlet of
+    type GreenThread. A GreenThread is created by calling eventlet.spawn() and
+    spawn() is not used to run our tests. At the time of this writing, the
+    eventlet patched threading.current_thread() method falls back to the
+    original unpatched current_thread() method if it is not called from a
+    GreenThead [1] and that breaks our tests involving this fixture.
+
+    We can work around this by patching threading.current_thread() with
+    eventlet.getcurrent() during creation of the lock object, if we detect we
+    are eventlet patched. If we are not eventlet patched, we use a no-op
+    context manager.
+
+    Note: this wrapper should be used for any ReaderWriterLock because any lock
+    may possibly be running inside a plain greenlet created by spawn_n().
+
+    See https://github.com/eventlet/eventlet/issues/731 for details.
+
+    [1] https://github.com/eventlet/eventlet/blob/v0.32.0/eventlet/green/threading.py#L128  # noqa
+    """
+
+    def __init__(self, *a, **kw):
+        eventlet_patched = eventlet.patcher.is_monkey_patched('thread')
+        mpatch = fixtures.MonkeyPatch(
+            'threading.current_thread', eventlet.getcurrent)
+        with mpatch if eventlet_patched else contextlib.ExitStack():
+            super().__init__(*a, **kw)

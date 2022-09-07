@@ -6066,10 +6066,9 @@ class ComputeTestCase(BaseTestCase,
             return fake_network.fake_get_instance_nw_info(self)
 
         self.stub_out('nova.network.neutron.API.get_instance_nw_info', stupid)
-        self.useFixture(
-            std_fixtures.MonkeyPatch(
-                'nova.network.neutron.API.supports_port_binding_extension',
-                lambda *args: True))
+        self.useFixture(std_fixtures.MonkeyPatch(
+            'nova.network.neutron.API.has_port_binding_extension',
+            lambda *args: True))
         # creating instance testdata
         instance = self._create_fake_instance_obj({'host': 'dummy'})
         c = context.get_admin_context()
@@ -8692,6 +8691,10 @@ class ComputeAPITestCase(BaseTestCase):
                          len(db.instance_get_all(self.context)))
         mock_secgroups.assert_called_once_with(mock.ANY, 'invalid_sec_group')
 
+    @mock.patch(
+        'nova.network.neutron.API.is_remote_managed_port',
+        new=mock.Mock(return_value=False),
+    )
     def test_create_instance_associates_requested_networks(self):
         # Make sure create adds the requested networks to the RequestSpec
 
@@ -8856,7 +8859,7 @@ class ComputeAPITestCase(BaseTestCase):
         group.create()
         get_group_mock.return_value = group
 
-        self.assertRaises(exception.QuotaError, self.compute_api.create,
+        self.assertRaises(exception.OverQuota, self.compute_api.create,
             self.context, self.default_flavor, self.fake_image['id'],
             scheduler_hints={'group': group.uuid},
             check_server_group_quota=True)
@@ -9827,6 +9830,10 @@ class ComputeAPITestCase(BaseTestCase):
             self.assertEqual(refs[i]['display_name'], name)
             self.assertEqual(refs[i]['hostname'], name)
 
+    @mock.patch(
+        'nova.network.neutron.API.is_remote_managed_port',
+        new=mock.Mock(return_value=False),
+    )
     @mock.patch("nova.objects.service.get_minimum_version_all_cells")
     @mock.patch(
         "nova.network.neutron.API.has_extended_resource_request_extension")
@@ -10223,7 +10230,9 @@ class ComputeAPITestCase(BaseTestCase):
         with test.nested(
             mock.patch.dict(self.compute.driver.capabilities,
                              supports_attach_interface=True),
-            mock.patch('oslo_concurrency.lockutils.lock'),
+            mock.patch(
+                'nova.utils.synchronized',
+                side_effect=lambda lockname: lambda f: f),
             mock.patch("nova.network.neutron.API.create_resource_requests"),
             mock.patch.object(
                 self.compute,
@@ -10253,9 +10262,7 @@ class ComputeAPITestCase(BaseTestCase):
                       action='interface_attach', phase='start'),
             mock.call(self.context, instance, self.compute.host,
                       action='interface_attach', phase='end')])
-        mock_lock.assert_called_once_with(lock_name, mock.ANY, mock.ANY,
-                mock.ANY, delay=mock.ANY, do_log=mock.ANY, fair=mock.ANY,
-                semaphores=mock.ANY)
+        mock_lock.assert_called_once_with(lock_name)
         mock_claim_pci.assert_called_once_with(
             self.context, instance,
             test.MatchType(objects.InstancePCIRequests))
@@ -10279,7 +10286,9 @@ class ComputeAPITestCase(BaseTestCase):
         with test.nested(
             mock.patch.dict(self.compute.driver.capabilities,
                              supports_attach_interface=True),
-            mock.patch('oslo_concurrency.lockutils.lock'),
+            mock.patch(
+                'nova.utils.synchronized',
+                side_effect=lambda lockname: lambda f: f),
             mock.patch("nova.network.neutron.API.create_resource_requests"),
             mock.patch.object(
                 self.compute,
@@ -10321,9 +10330,7 @@ class ComputeAPITestCase(BaseTestCase):
             mock.call(self.context, instance, self.compute.host,
                       action='interface_attach', phase='end')])
 
-        mock_lock.assert_called_once_with(lock_name, mock.ANY, mock.ANY,
-                mock.ANY, delay=mock.ANY, do_log=mock.ANY, fair=mock.ANY,
-                semaphores=mock.ANY)
+        mock_lock.assert_called_once_with(lock_name)
 
         # as this is an OVS port we don't call the pci claim but with an empty
         # request
@@ -11077,7 +11084,9 @@ class ComputeAPITestCase(BaseTestCase):
             mock.patch.object(self.compute.network_api,
                 'deallocate_port_for_instance',
                 return_value=([], port_allocation)),
-            mock.patch('oslo_concurrency.lockutils.lock'),
+            mock.patch(
+                'nova.utils.synchronized',
+                side_effect=lambda lockname: lambda f: f),
             mock.patch('nova.pci.request.get_instance_pci_request_from_vif',
                        return_value=pci_req),
             mock.patch.object(self.compute.rt, 'unclaim_pci_devices'),
@@ -11098,9 +11107,7 @@ class ComputeAPITestCase(BaseTestCase):
                       action='interface_detach', phase='start'),
             mock.call(self.context, instance, self.compute.host,
                       action='interface_detach', phase='end')])
-        mock_lock.assert_called_once_with(lock_name, mock.ANY, mock.ANY,
-                mock.ANY, delay=mock.ANY, do_log=mock.ANY, fair=mock.ANY,
-                semaphores=mock.ANY)
+        mock_lock.assert_called_once_with(lock_name)
         mock_unclaim_pci.assert_called_once_with(
             self.context, pci_dev, instance)
         self.assertNotIn(pci_req, instance.pci_requests.requests)
@@ -13176,6 +13183,7 @@ class DisabledInstanceTypesTestCase(BaseTestCase):
     migrations against it, but we *don't* want customers building new
     instances with the phased-out instance-type.
     """
+
     def setUp(self):
         super(DisabledInstanceTypesTestCase, self).setUp()
         self.compute_api = compute.API()
@@ -13245,6 +13253,7 @@ class ComputeRescheduleResizeOrReraiseTestCase(BaseTestCase):
     """Test logic and exception handling around rescheduling prep resize
     requests
     """
+
     def setUp(self):
         super(ComputeRescheduleResizeOrReraiseTestCase, self).setUp()
         self.instance = self._create_fake_instance_obj()
