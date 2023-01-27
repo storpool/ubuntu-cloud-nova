@@ -1,3 +1,9 @@
+nova (3:24.2.0-0ubuntu1~cloud0) focal-xena; urgency=medium
+
+  * New stable point release for OpenStack Xena (LP: #2004032).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Fri, 27 Jan 2023 11:07:26 -0500
+
 nova (3:24.1.1-0ubuntu1~cloud0) focal-xena; urgency=medium
 
   * New stable point release for OpenStack Xena (LP: #1980367).
