@@ -1015,6 +1015,7 @@ doc/source/admin/ssh-configuration.rst
 doc/source/admin/support-compute.rst
 doc/source/admin/uefi.rst
 doc/source/admin/upgrades.rst
+doc/source/admin/vdpa.rst
 doc/source/admin/vendordata.rst
 doc/source/admin/virtual-gpu.rst
 doc/source/admin/virtual-persistent-memory.rst
@@ -2619,6 +2620,7 @@ nova/tests/functional/regressions/test_bug_1558866.py
 nova/tests/functional/regressions/test_bug_1568208.py
 nova/tests/functional/regressions/test_bug_1595962.py
 nova/tests/functional/regressions/test_bug_1620248.py
+nova/tests/functional/regressions/test_bug_1628606.py
 nova/tests/functional/regressions/test_bug_1669054.py
 nova/tests/functional/regressions/test_bug_1670627.py
 nova/tests/functional/regressions/test_bug_1671648.py
@@ -2689,6 +2691,7 @@ nova/tests/functional/regressions/test_bug_1938326.py
 nova/tests/functional/regressions/test_bug_1939545.py
 nova/tests/functional/regressions/test_bug_1943431.py
 nova/tests/functional/regressions/test_bug_1944619.py
+nova/tests/functional/regressions/test_bug_1978983.py
 nova/tests/functional/wsgi/__init__.py
 nova/tests/functional/wsgi/test_flavor_manage.py
 nova/tests/functional/wsgi/test_interfaces.py
@@ -3632,6 +3635,7 @@ releasenotes/notes/bug-1894966-d25c12b1320cb910.yaml
 releasenotes/notes/bug-1910466-max-vcpu-topologies-with-numa-9a9ceb1b0fc7c33d.yaml
 releasenotes/notes/bug-1911924-6e93d8a5038d18c1.yaml
 releasenotes/notes/bug-1939604-547c729b7741831b.yaml
+releasenotes/notes/bug-1942329-22b08fa4b322881d.yaml
 releasenotes/notes/bug-1944619-fix-live-migration-rollback.yaml
 releasenotes/notes/bug-1946729-wait-for-vif-plugged-event-during-hard-reboot-fb491f6a68370bab.yaml
 releasenotes/notes/bug-1948705-ff80ae392c525475.yaml
@@ -3640,6 +3644,9 @@ releasenotes/notes/bug-1958636-smm-check-and-enable.yaml
 releasenotes/notes/bug-1960230-cleanup-instances-dir-resize-56282e1b436a4908.yaml
 releasenotes/notes/bug-1960401-504eb255253d966a.yaml
 releasenotes/notes/bug-1970383-segment-scheduling-permissions-92ba907b10a9eb1c.yaml
+releasenotes/notes/bug-1978444-db46df5f3d5ea19e.yaml
+releasenotes/notes/bug-1981813-vnic-type-change-9f3e16fae885b57f.yaml
+releasenotes/notes/bug-1982284-libvirt-handle-no-ram-info-was-set-99784934ed80fd72.yaml
 releasenotes/notes/bug-hyperv-1629040-e1eb35a7b31d9af8.yaml
 releasenotes/notes/bug-retry-corrupted-download-5798b0df44a00e4e.yaml
 releasenotes/notes/bug-volume-attach-policy-1635358-671ce4d4ee8c211b.yaml
@@ -3833,6 +3840,7 @@ releasenotes/notes/hyper-v-vnuma-support-ffedfaadac91bbac.yaml
 releasenotes/notes/hyperv-uefi-secure-boot-a2a617ac2c313afd.yaml
 releasenotes/notes/hyperv_2k8_drop-fb309f811767c7c4.yaml
 releasenotes/notes/idempotent-put-resource-class-dc7a267c823b7995.yaml
+releasenotes/notes/ignore-instance-task-state-for-evacuation-e000f141d0153638.yaml
 releasenotes/notes/image-id-in-snapshot-notification-7e1e10435475a1af.yaml
 releasenotes/notes/image-metadata-prefiltering-2921c1d38951f7a9.yaml
 releasenotes/notes/image-precaching-d46506568fefa1ea.yaml
@@ -4217,6 +4225,7 @@ releasenotes/notes/share-pci-between-numa-nodes-0bd206eeca4ebcde.yaml
 releasenotes/notes/shared-volume-between-guests-6eb6cc9e3bcf80fa.yaml
 releasenotes/notes/show-server-group-8d4bf609213a94de.yaml
 releasenotes/notes/shuffle-best-hosts-447c1703a5d6d140.yaml
+releasenotes/notes/skip-compare-cpu-on-dest-6ae419ddd61fd0f8.yaml
 releasenotes/notes/smartnic-support-0339efe4b68075fe.yaml
 releasenotes/notes/socket-pci-numa-affinity-policy-70b95b57b9f8f0c4.yaml
 releasenotes/notes/soft-affinity-for-server-group-f45e191bd8cdbd15.yaml
@@ -4277,6 +4286,7 @@ releasenotes/notes/v21enable-8454d6eca3ec604f.yaml
 releasenotes/notes/validate-expired-user-tokens-57a265cb4ee4ba6f.yaml
 releasenotes/notes/validate-expired-user-tokens-glance-440c36887286b52f.yaml
 releasenotes/notes/vdpa-cc2300d2c46c150b.yaml
+releasenotes/notes/vdpa-move-ops-a7b3799807807a92.yaml
 releasenotes/notes/vendordata-reboot-ad1130444a63f2d0.yaml
 releasenotes/notes/vendordata-reboot-cache-boot-roles-6051fabcd4981928.yaml
 releasenotes/notes/vendordata-reboot-hard-failure-42beeb1044680a50.yaml

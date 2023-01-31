@@ -200,7 +200,7 @@ The template will be rendered using Jinja2 template engine, and receive a
 top-level key called ``interfaces``. This key will contain a list of
 dictionaries, one for each interface.
 
-Refer to the cloudinit documentaion for more information:
+Refer to the cloudinit documentation for more information:
 
   https://cloudinit.readthedocs.io/en/latest/topics/datasources.html
 
@@ -1007,6 +1007,15 @@ Related options:
 * ``[scheduler]query_placement_for_image_type_support`` - enables
   filtering computes based on supported image types, which is required
   to be enabled for this to take effect.
+"""),
+    cfg.ListOpt('vmdk_allowed_types',
+                default=['streamOptimized', 'monolithicSparse'],
+                help="""
+A list of strings describing allowed VMDK "create-type" subformats
+that will be allowed. This is recommended to only include
+single-file-with-sparse-header variants to avoid potential host file
+exposure due to processing named extents. If this list is empty, then no
+form of VMDK image will be allowed.
 """),
     cfg.BoolOpt('packing_host_numa_cells_allocation_strategy',
         default=True,

@@ -1242,6 +1242,20 @@ class ComputeManager(manager.Manager):
                           'updated.', instance=instance)
             self._set_instance_obj_error_state(instance)
             return
+        except exception.PciDeviceNotFoundById:
+            # This is bug 1981813 where the bound port vnic_type has changed
+            # from direct to macvtap. Nova does not support that and it
+            # already printed an ERROR when the change is detected during
+            # _heal_instance_info_cache. Now we print an ERROR again and skip
+            # plugging the vifs but let the service startup continue to init
+            # the other instances
+            LOG.exception(
+                'Virtual interface plugging failed for instance. Probably the '
+                'vnic_type of the bound port has been changed. Nova does not '
+                'support such change.',
+                instance=instance
+            )
+            return
 
         if instance.task_state == task_states.RESIZE_MIGRATING:
             # We crashed during resize/migration, so roll back for safety
@@ -8572,8 +8586,9 @@ class ComputeManager(manager.Manager):
         # host attachment. We fetch BDMs before that to retain connection_info
         # and attachment_id relating to the source host for post migration
         # cleanup.
-        post_live_migration = functools.partial(self._post_live_migration,
-                                                source_bdms=source_bdms)
+        post_live_migration = functools.partial(
+            self._post_live_migration_update_host, source_bdms=source_bdms
+            )
         rollback_live_migration = functools.partial(
             self._rollback_live_migration, source_bdms=source_bdms)
 
@@ -8845,6 +8860,42 @@ class ComputeManager(manager.Manager):
                                   bdm.attachment_id, self.host,
                                   str(e), instance=instance)
 
+    # TODO(sean-k-mooney): add typing
+    def _post_live_migration_update_host(
+        self, ctxt, instance, dest, block_migration=False,
+        migrate_data=None, source_bdms=None
+    ):
+        try:
+            self._post_live_migration(
+                ctxt, instance, dest, block_migration, migrate_data,
+                source_bdms)
+        except Exception:
+            # Restore the instance object
+            node_name = None
+            try:
+                # get node name of compute, where instance will be
+                # running after migration, that is destination host
+                compute_node = self._get_compute_info(ctxt, dest)
+                node_name = compute_node.hypervisor_hostname
+            except exception.ComputeHostNotFound:
+                LOG.exception('Failed to get compute_info for %s', dest)
+
+            # we can never rollback from post live migration and we can only
+            # get here if the instance is running on the dest so we ensure
+            # the instance.host is set correctly and reraise the original
+            # exception unmodified.
+            if instance.host != dest:
+                # apply saves the new fields while drop actually removes the
+                # migration context from the instance, so migration persists.
+                instance.apply_migration_context()
+                instance.drop_migration_context()
+                instance.host = dest
+                instance.task_state = None
+                instance.node = node_name
+                instance.progress = 0
+                instance.save()
+            raise
+
     @wrap_exception()
     @wrap_instance_fault
     def _post_live_migration(self, ctxt, instance, dest,
@@ -8856,7 +8907,7 @@ class ComputeManager(manager.Manager):
         and mainly updating database record.
 
         :param ctxt: security context
-        :param instance: instance dict
+        :param instance: instance object
         :param dest: destination host
         :param block_migration: if true, prepare for block migration
         :param migrate_data: if not None, it is a dict which has data
@@ -10930,6 +10981,9 @@ class ComputeManager(manager.Manager):
             if profile.get('vf_num'):
                 profile['vf_num'] = pci_utils.get_vf_num_by_pci_address(
                     pci_dev.address)
+
+            if pci_dev.mac_address:
+                profile['device_mac_address'] = pci_dev.mac_address
 
             mig_vif.profile = profile
             LOG.debug("Updating migrate VIF profile for port %(port_id)s:"
