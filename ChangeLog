@@ -1,6 +1,48 @@
 CHANGES
 =======
 
+25.1.0
+------
+
+* [stable-only][cve] Check VMDK create-type against an allowed list
+* Gracefully ERROR in \_init\_instance if vnic\_type changed
+* Reproduce bug 1981813 in func env
+* Adapt websocketproxy tests for SimpleHTTPServer fix
+* enable blocked VDPA move operations
+* Add compute restart capability for libvirt func tests
+* Remove double mocking... again
+* Remove double mocking
+* Record SRIOV PF MAC in the binding profile
+* refactor: remove duplicated logic
+* [compute] always set instance.host in post\_livemigration
+* Adds a repoducer for post live migration fail
+* Handle "no RAM info was set" migration case
+* nova-live-migration tests not needed for Ironic
+* For evacuation, ignore if task\_state is not None
+* add regression test case for bug 1978983
+* Retry attachment delete API call for 504 Gateway Timeout
+* Fix typos in help messages
+
+25.0.1
+------
+
+* libvirt: Add a workaround to skip compareCPU() on destination
+* Add missing condition
+* neutron: Unbind remaining ports after PortNotFound
+* Retry in CellDatabases fixture when global DB state changes
+* Allow claiming PCI PF if child VF is unavailable
+* Simulate bug 1969496
+* Remove unavailable but not reported PCI devices at startup
+* Isolate PCI tracker unit tests
+* Fix segment-aware scheduling permissions error
+* [CI] Install dependencies for docs target
+* Fix pre\_live\_migration rollback
+* Adds regression test for bug LP#1944619
+* [stable-only] Drop lower-constraints job
+* Fix eventlet.tpool import
+* [stable-only] Update TOX\_CONSTRAINTS\_FILE for stable/yoga
+* [stable-only] Update .gitreview for stable/yoga
+
 25.0.0
 ------
 
