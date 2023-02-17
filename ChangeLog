@@ -1,13 +1,38 @@
 CHANGES
 =======
 
+24.2.0
+------
+
+* Gracefully ERROR in \_init\_instance if vnic\_type changed
+* Reproduce bug 1981813 in func env
+* [stable-only][cve] Check VMDK create-type against an allowed list
+* enable blocked VDPA move operations
+* Add compute restart capability for libvirt func tests
+* Remove double mocking... again
+* Remove double mocking
+* Record SRIOV PF MAC in the binding profile
+* refactor: remove duplicated logic
+* Adapt websocketproxy tests for SimpleHTTPServer fix
+* Retry attachment delete API call for 504 Gateway Timeout
+* [compute] always set instance.host in post\_livemigration
+* Adds a repoducer for post live migration fail
+* Handle "no RAM info was set" migration case
+* For evacuation, ignore if task\_state is not None
+* add regression test case for bug 1978983
+* [nova/libvirt] Support for checking and enabling SMM when needed
+
 24.1.1
 ------
 
 * Add missing condition
 * Add service version check workaround for FFU
+* Fix instance's image\_ref lost on failed unshelving
+* Reproducer unit test for bug 1934094
+* neutron: Unbind remaining ports after PortNotFound
 * Fix pre\_live\_migration rollback
 * Adds regression test for bug LP#1944619
+* Retry in CellDatabases fixture when global DB state changes
 * Fix eventlet.tpool import
 * [CI] Install dependencies for docs target
 * [stable-only] Drop lower-constraints job
@@ -16,11 +41,13 @@ CHANGES
 * Test aborting queued live migration
 * Cleanup old resize instances dir before resize
 * [stable-only] Set nova-tox-functional-centos8-py36 non-voting
+* reenable greendns in nova
 
 24.1.0
 ------
 
 * Gracefull recovery when attaching volume fails
+* Fix the wrong exception used to retry detach API calls
 * libvirt: Add announce-self post live-migration workaround
 * Revert "Revert resize: wait for events according to hybrid plug"
 * Add nova-ovs-hybrid-plug job
