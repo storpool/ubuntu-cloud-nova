@@ -71,11 +71,10 @@ class HostTestCase(test.NoDBTestCase):
         self.useFixture(nova_fixtures.LibvirtFixture())
         self.host = host.Host("qemu:///system")
 
-    @mock.patch("nova.virt.libvirt.host.Host._init_events")
-    def test_repeat_initialization(self, mock_init_events):
+    def test_repeat_initialization(self):
         for i in range(3):
             self.host.initialize()
-        mock_init_events.assert_called_once_with()
+        self.host._init_events.assert_called_once_with()
 
     @mock.patch.object(fakelibvirt.virConnect, "registerCloseCallback")
     def test_close_callback(self, mock_close):
@@ -1113,8 +1112,9 @@ Active:          8381604 kB
         expect_vf = ["rx", "tx", "sg", "tso", "gso", "gro", "rxvlan", "txvlan"]
         self.assertEqual(expect_vf, actualvf)
 
-    @mock.patch.object(pci_utils, 'get_ifname_by_pci_address')
-    def test_get_pcidev_info_non_nic(self, mock_get_ifname):
+    def test_get_pcidev_info_non_nic(self):
+        pci_utils.get_mac_by_pci_address.side_effect = (
+            exception.PciDeviceNotFoundById('0000:04:00.3'))
         dev_name = "pci_0000_04_11_7"
         pci_dev = fakelibvirt.NodeDevice(
             self.host._get_connection(),
@@ -1128,11 +1128,10 @@ Active:          8381604 kB
             'parent_addr': '0000:04:00.3',
         }
         self.assertEqual(expect_vf, actual_vf)
-        mock_get_ifname.assert_not_called()
+        pci_utils.get_ifname_by_pci_address.assert_not_called()
 
-    @mock.patch.object(pci_utils, 'get_ifname_by_pci_address',
-                return_value='ens1')
-    def test_get_pcidev_info(self, mock_get_ifname):
+    def test_get_pcidev_info(self):
+        pci_utils.get_ifname_by_pci_address.return_value = 'ens1'
         devs = {
             "pci_0000_04_00_3", "pci_0000_04_10_7", "pci_0000_04_11_7",
             "pci_0000_04_00_1", "pci_0000_03_00_0", "pci_0000_03_00_1"
@@ -1152,9 +1151,9 @@ Active:          8381604 kB
             dev for dev in node_devs.values() if dev.name() not in devs]
 
         name = "pci_0000_04_00_3"
-        actual_vf = self.host._get_pcidev_info(
+        actual_pf = self.host._get_pcidev_info(
             name, node_devs[name], net_devs, [])
-        expect_vf = {
+        expect_pf = {
             "dev_id": "pci_0000_04_00_3",
             "address": "0000:04:00.3",
             "product_id": '1521',
@@ -1162,8 +1161,10 @@ Active:          8381604 kB
             "vendor_id": '8086',
             "label": 'label_8086_1521',
             "dev_type": obj_fields.PciDeviceType.SRIOV_PF,
+            # value defined in the LibvirtFixture
+            "mac_address": "52:54:00:1e:59:c6",
             }
-        self.assertEqual(expect_vf, actual_vf)
+        self.assertEqual(expect_pf, actual_pf)
 
         name = "pci_0000_04_10_7"
         actual_vf = self.host._get_pcidev_info(
@@ -1218,9 +1219,9 @@ Active:          8381604 kB
         self.assertEqual(expect_vf, actual_vf)
 
         name = "pci_0000_03_00_0"
-        actual_vf = self.host._get_pcidev_info(
+        actual_pf = self.host._get_pcidev_info(
             name, node_devs[name], net_devs, [])
-        expect_vf = {
+        expect_pf = {
             "dev_id": "pci_0000_03_00_0",
             "address": "0000:03:00.0",
             "product_id": '1013',
@@ -1228,13 +1229,15 @@ Active:          8381604 kB
             "vendor_id": '15b3',
             "label": 'label_15b3_1013',
             "dev_type": obj_fields.PciDeviceType.SRIOV_PF,
+            # value defined in the LibvirtFixture
+            "mac_address": "52:54:00:1e:59:c6",
             }
-        self.assertEqual(expect_vf, actual_vf)
+        self.assertEqual(expect_pf, actual_pf)
 
         name = "pci_0000_03_00_1"
-        actual_vf = self.host._get_pcidev_info(
+        actual_pf = self.host._get_pcidev_info(
             name, node_devs[name], net_devs, [])
-        expect_vf = {
+        expect_pf = {
             "dev_id": "pci_0000_03_00_1",
             "address": "0000:03:00.1",
             "product_id": '1013',
@@ -1242,8 +1245,10 @@ Active:          8381604 kB
             "vendor_id": '15b3',
             "label": 'label_15b3_1013',
             "dev_type": obj_fields.PciDeviceType.SRIOV_PF,
+            # value defined in the LibvirtFixture
+            "mac_address": "52:54:00:1e:59:c6",
             }
-        self.assertEqual(expect_vf, actual_vf)
+        self.assertEqual(expect_pf, actual_pf)
 
     def test_list_pci_devices(self):
         with mock.patch.object(self.host, "_list_devices") as mock_listDevices:
@@ -1810,6 +1815,14 @@ cg /cgroup/memory cg opt1,opt2 0 0
         # which is what we want
         loader = self.host.get_loader('x86_64', 'q35', has_secure_boot=True)
         self.assertIsNotNone(loader)
+
+        # check that SMM bool is false as we don't need it
+        self.assertFalse(loader[2])
+
+        # check that we get SMM bool correctly (True) when required
+        loaders[0]['features'].append('requires-smm')
+        loader = self.host.get_loader('x86_64', 'q35', has_secure_boot=True)
+        self.assertTrue(loader[2])
 
         # while it should fail here since we don't want it now
         self.assertRaises(
