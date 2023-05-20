@@ -8019,15 +8019,52 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def _get_mediated_device_information(self, devname):
         """Returns a dict of a mediated device."""
-        virtdev = self._host.device_lookup_by_name(devname)
+        # LP #1951656 - In Libvirt 7.7, the mdev name now includes the PCI
+        # address of the parent device (e.g. mdev_<uuid>_<pci_address>) due to
+        # the mdevctl allowing for multiple mediated devs having the same UUID
+        # defined (only one can be active at a time). Since the guest
+        # information doesn't have the parent ID, try to lookup which
+        # mediated device is available that matches the UUID. If multiple
+        # devices are found that match the UUID, then this is an error
+        # condition.
+        try:
+            virtdev = self._host.device_lookup_by_name(devname)
+        except libvirt.libvirtError as ex:
+            if ex.get_error_code() != libvirt.VIR_ERR_NO_NODE_DEVICE:
+                raise
+            mdevs = [dev for dev in self._host.list_mediated_devices()
+                     if dev.startswith(devname)]
+            # If no matching devices are found, simply raise the original
+            # exception indicating that no devices are found.
+            if not mdevs:
+                raise
+            elif len(mdevs) > 1:
+                msg = ("The mediated device name %(devname)s refers to a UUID "
+                       "that is present in multiple libvirt mediated devices. "
+                       "Matching libvirt mediated devices are %(devices)s. "
+                       "Mediated device UUIDs must be unique for Nova." %
+                       {'devname': devname,
+                        'devices': ', '.join(mdevs)})
+                raise exception.InvalidLibvirtMdevConfig(reason=msg)
+
+            LOG.debug('Found requested device %s as %s. Using that.',
+                      devname, mdevs[0])
+            virtdev = self._host.device_lookup_by_name(mdevs[0])
         xmlstr = virtdev.XMLDesc(0)
         cfgdev = vconfig.LibvirtConfigNodeDevice()
         cfgdev.parse_str(xmlstr)
+        # Starting with Libvirt 7.3, the uuid information is available in the
+        # node device information. If its there, use that. Otherwise,
+        # fall back to the previous behavior of parsing the uuid from the
+        # devname.
+        if cfgdev.mdev_information.uuid:
+            mdev_uuid = cfgdev.mdev_information.uuid
+        else:
+            mdev_uuid = libvirt_utils.mdev_name2uuid(cfgdev.name)
 
         device = {
             "dev_id": cfgdev.name,
-            # name is like mdev_00ead764_fdc0_46b6_8db9_2963f5c815b4
-            "uuid": libvirt_utils.mdev_name2uuid(cfgdev.name),
+            "uuid": mdev_uuid,
             # the physical GPU PCI device
             "parent": cfgdev.parent,
             "type": cfgdev.mdev_information.type,
@@ -8115,6 +8152,7 @@ class LibvirtDriver(driver.ComputeDriver):
         :param requested_types: Filter out the result for only mediated devices
                                 having those types.
         """
+        LOG.debug('Searching for available mdevs...')
         allocated_mdevs = self._get_all_assigned_mediated_devices()
         mdevs = self._get_mediated_devices(requested_types)
         available_mdevs = set()
@@ -8130,6 +8168,7 @@ class LibvirtDriver(driver.ComputeDriver):
                 available_mdevs.add(mdev["uuid"])
 
         available_mdevs -= set(allocated_mdevs)
+        LOG.info('Available mdevs at: %s.', available_mdevs)
         return available_mdevs
 
     def _create_new_mediated_device(self, parent, uuid=None):
@@ -8141,6 +8180,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
         :returns: the newly created mdev UUID or None if not possible
         """
+        LOG.debug('Attempting to create new mdev...')
         supported_types = self.supported_vgpu_types
         # Try to see if we can still create a new mediated device
         devices = self._get_mdev_capable_devices(supported_types)
@@ -8152,6 +8192,7 @@ class LibvirtDriver(driver.ComputeDriver):
                 # The device is not the one that was called, not creating
                 # the mdev
                 continue
+            LOG.debug('Trying on: %s.', dev_name)
             dev_supported_type = self._get_vgpu_type_per_pgpu(dev_name)
             if dev_supported_type and device['types'][
                     dev_supported_type]['availableInstances'] > 0:
@@ -8161,7 +8202,13 @@ class LibvirtDriver(driver.ComputeDriver):
                 pci_addr = "{}:{}:{}.{}".format(*dev_name[4:].split('_'))
                 chosen_mdev = nova.privsep.libvirt.create_mdev(
                     pci_addr, dev_supported_type, uuid=uuid)
+                LOG.info('Created mdev: %s on pGPU: %s.',
+                         chosen_mdev, pci_addr)
                 return chosen_mdev
+            LOG.debug('Failed: No available instances on device.')
+        LOG.info('Failed to create mdev. '
+                 'No free space found among the following devices: %s.',
+                 [dev['dev_id'] for dev in devices])
 
     @utils.synchronized(VGPU_RESOURCE_SEMAPHORE)
     def _allocate_mdevs(self, allocations):
@@ -8244,6 +8291,8 @@ class LibvirtDriver(driver.ComputeDriver):
                 # Take the first available mdev
                 chosen_mdev = mdevs_available.pop()
             else:
+                LOG.debug('No available mdevs where found. '
+                          'Creating an new one...')
                 chosen_mdev = self._create_new_mediated_device(parent_device)
             if not chosen_mdev:
                 # If we can't find devices having available VGPUs, just raise
@@ -8251,6 +8300,7 @@ class LibvirtDriver(driver.ComputeDriver):
                     reason='mdev-capable resource is not available')
             else:
                 chosen_mdevs.append(chosen_mdev)
+                LOG.info('Allocated mdev: %s.', chosen_mdev)
         return chosen_mdevs
 
     def _detach_mediated_devices(self, guest):
