@@ -1,3 +1,42 @@
+nova (3:25.1.1-0ubuntu1~cloud0) focal-yoga; urgency=medium
+
+  * New upstream release for the Ubuntu Cloud Archive.
+
+ -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Sat, 20 May 2023 02:28:53 +0000
+
+nova (3:25.1.1-0ubuntu1) jammy; urgency=medium
+
+  * New stable point release for OpenStack Yoga (LP: #2019759).
+  * d/p/ignore-deleted-server-groups-in-validation.patch: Dropped. Fixed
+    in stable point release.
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Mon, 15 May 2023 16:11:40 -0400
+
+nova (3:25.1.0-0ubuntu2.2) jammy-security; urgency=medium
+
+  * SECURITY REGRESSION: Regressions in other projects (LP: #2020111)
+    - debian/patches/series: Do not apply CVE-2023-2088.patch until
+      patches are ready for all upstream OpenStack projects.
+    - CVE-2023-2088
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Thu, 18 May 2023 11:34:52 -0400
+
+nova (3:25.1.0-0ubuntu2.1) jammy-security; urgency=medium
+
+  * SECURITY UPDATE: Unauthorized File Access
+    - debian/patches/CVE-2023-2088.patch: Use force=True for os-brick
+      disconnect during delete.
+    - CVE-2023-2088
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Thu, 04 May 2023 16:33:25 +0200
+
+nova (3:25.1.0-0ubuntu2) jammy; urgency=medium
+
+  * Backport fix to ignore deleted server groups (LP: #1890244)
+    d/p/ignore-deleted-server-groups-in-validation.patch
+
+ -- Edward Hope-Morley <edward.hope-morley@canonical.com>  Fri, 17 Mar 2023 12:44:49 +0000
+
 nova (3:25.1.0-0ubuntu1~cloud0+0~0~0.sp1) focal-yoga; urgency=medium
 
   * Non-maintainer upload for patch tracking only.
@@ -11,7 +50,7 @@ nova (3:25.1.0-0ubuntu1~cloud0) focal-yoga; urgency=medium
 
  -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Tue, 31 Jan 2023 13:50:22 +0000
 
-nova (3:25.1.0-0ubuntu1) jammy-security; urgency=medium
+nova (3:25.1.0-0ubuntu1) jammy; urgency=medium
 
   * New stable point release for OpenStack Yoga (LP: #2004030).
 

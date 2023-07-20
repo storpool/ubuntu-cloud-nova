@@ -2,4 +2,5 @@
 drop-sphinxcontrib-rsvgconverter.patch
 drop-sphinx-feature-classification.patch
 arm-console-patch.patch
+#CVE-2023-2088.patch
 hardcode-libvirt-domain-iothread.patch

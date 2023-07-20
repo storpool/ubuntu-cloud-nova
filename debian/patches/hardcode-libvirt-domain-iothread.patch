@@ -217,7 +217,7 @@ Last-Update: 2022-06-02
      def test_config_machine_type(self):
          obj = config.LibvirtConfigGuest()
          obj.virt_type = "kvm"
-@@ -3485,6 +3519,14 @@
+@@ -3511,6 +3545,14 @@
                <driver iommu="on" />
              </controller>""")
  
@@ -232,7 +232,7 @@ Last-Update: 2022-06-02
      def test_config_guest_usb_host_controller(self):
          obj = config.LibvirtConfigGuestUSBHostController()
          obj.type = 'usb'
-@@ -3492,6 +3534,11 @@
+@@ -3518,6 +3560,11 @@
  
          xml = obj.to_xml()
          self.assertXmlEqual(xml, "<controller type='usb' index='0'/>")
