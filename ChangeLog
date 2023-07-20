@@ -1,10 +1,22 @@
 CHANGES
 =======
 
+25.1.1
+------
+
+* Handle mdev devices in libvirt 7.7+
+* Reproducer for bug 1951656
+* db: Resolve additional SAWarning warnings
+* ignore deleted server groups in validation
+* add repoducer test for bug 1890244
+* Fix rescue volume-based instance
+* Add a workaround to skip hypervisor version check on LM
+
 25.1.0
 ------
 
 * [stable-only][cve] Check VMDK create-type against an allowed list
+* Improving logging at '\_allocate\_mdevs'
 * Gracefully ERROR in \_init\_instance if vnic\_type changed
 * Reproduce bug 1981813 in func env
 * Adapt websocketproxy tests for SimpleHTTPServer fix
@@ -17,6 +29,8 @@ CHANGES
 * [compute] always set instance.host in post\_livemigration
 * Adds a repoducer for post live migration fail
 * Handle "no RAM info was set" migration case
+* Avoid n-cond startup abort for keystone failures
+* Unify placement client singleton implementations
 * nova-live-migration tests not needed for Ironic
 * For evacuation, ignore if task\_state is not None
 * add regression test case for bug 1978983
@@ -28,6 +42,7 @@ CHANGES
 
 * libvirt: Add a workaround to skip compareCPU() on destination
 * Add missing condition
+* Accept both 1 and Y as AMD SEV KVM kernel param value
 * neutron: Unbind remaining ports after PortNotFound
 * Retry in CellDatabases fixture when global DB state changes
 * Allow claiming PCI PF if child VF is unavailable
@@ -35,6 +50,7 @@ CHANGES
 * Remove unavailable but not reported PCI devices at startup
 * Isolate PCI tracker unit tests
 * Fix segment-aware scheduling permissions error
+* Reproduce live migration rollback w/o multi port bindings error
 * [CI] Install dependencies for docs target
 * Fix pre\_live\_migration rollback
 * Adds regression test for bug LP#1944619

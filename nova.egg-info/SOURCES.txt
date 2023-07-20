@@ -2673,6 +2673,7 @@ nova/tests/functional/regressions/test_bug_1879878.py
 nova/tests/functional/regressions/test_bug_1886418.py
 nova/tests/functional/regressions/test_bug_1888395.py
 nova/tests/functional/regressions/test_bug_1889108.py
+nova/tests/functional/regressions/test_bug_1890244.py
 nova/tests/functional/regressions/test_bug_1893284.py
 nova/tests/functional/regressions/test_bug_1894966.py
 nova/tests/functional/regressions/test_bug_1895696.py
@@ -2691,6 +2692,7 @@ nova/tests/functional/regressions/test_bug_1938326.py
 nova/tests/functional/regressions/test_bug_1939545.py
 nova/tests/functional/regressions/test_bug_1943431.py
 nova/tests/functional/regressions/test_bug_1944619.py
+nova/tests/functional/regressions/test_bug_1951656.py
 nova/tests/functional/regressions/test_bug_1978983.py
 nova/tests/functional/wsgi/__init__.py
 nova/tests/functional/wsgi/test_flavor_manage.py
@@ -3801,6 +3803,7 @@ releasenotes/notes/fill-instance-action-record-gaps-14b36eba313d6d87.yaml
 releasenotes/notes/fill_virtual_interface_list-1ec5bcccde2ebd22.yaml
 releasenotes/notes/filters_use_reqspec-9f92b9c0ead76093.yaml
 releasenotes/notes/fix-default-cell0-db-connection-f9717053cc34778e.yaml
+releasenotes/notes/fix-group-policy-validation-with-deleted-groups-4f685fd1d6b84192.yaml
 releasenotes/notes/fix-ironic-compute-restart-port-attachments-3282e9ea051561d4.yaml
 releasenotes/notes/fix-ironic-inventory-d565c77af83c710d.yaml
 releasenotes/notes/fix-multiarch-image-props-filter-f2e885aa53d585ea.yaml
@@ -4176,6 +4179,7 @@ releasenotes/notes/request-traits-in-nova-ffcb00f76229b6e9.yaml
 releasenotes/notes/request_log-e7680b3276910743.yaml
 releasenotes/notes/require-placemnet-api-microversion-1.36-1129fe4afc949075.yaml
 releasenotes/notes/require_port_binding_ext-e6d9bdd4f6eef4e3.yaml
+releasenotes/notes/rescue-volume-based-instance-c6e3fba236d90be7.yaml
 releasenotes/notes/reserved-hugepages-per-nodes-f36225d5fca807e4.yaml
 releasenotes/notes/reserved_host_cpus-e7de4aa9b89bd947.yaml
 releasenotes/notes/reset-marker-for-map_instances-0c841ef45e3adc7b.yaml
@@ -4226,6 +4230,7 @@ releasenotes/notes/shared-volume-between-guests-6eb6cc9e3bcf80fa.yaml
 releasenotes/notes/show-server-group-8d4bf609213a94de.yaml
 releasenotes/notes/shuffle-best-hosts-447c1703a5d6d140.yaml
 releasenotes/notes/skip-compare-cpu-on-dest-6ae419ddd61fd0f8.yaml
+releasenotes/notes/skip-hypervisor-version-check-on-lm-a87f2dcb4f8bf0f2.yaml
 releasenotes/notes/smartnic-support-0339efe4b68075fe.yaml
 releasenotes/notes/socket-pci-numa-affinity-policy-70b95b57b9f8f0c4.yaml
 releasenotes/notes/soft-affinity-for-server-group-f45e191bd8cdbd15.yaml

@@ -623,6 +623,11 @@ class ComputeManager(manager.Manager):
         # We want the ComputeManager, ResourceTracker and ComputeVirtAPI all
         # using the same instance of SchedulerReportClient which has the
         # ProviderTree cache for this compute service.
+        # NOTE(danms): We do not use the global placement client
+        # singleton here, because the above-mentioned stack of objects
+        # maintain local state in the client. Thus, keeping our own
+        # private object for that stack avoids any potential conflict
+        # with other users in our process outside of the above.
         self.reportclient = report.SchedulerReportClient()
         self.virtapi = ComputeVirtAPI(self)
         self.network_api = neutron.API()
@@ -1732,27 +1737,32 @@ class ComputeManager(manager.Manager):
         # hosts.  This is a validation step to make sure that starting the
         # instance here doesn't violate the policy.
         if scheduler_hints is not None:
-            # only go through here if scheduler_hints is provided, even if it
-            # is empty.
+            # only go through here if scheduler_hints is provided,
+            # even if it is empty.
             group_hint = scheduler_hints.get('group')
             if not group_hint:
                 return
             else:
-                # The RequestSpec stores scheduler_hints as key=list pairs so
-                # we need to check the type on the value and pull the single
-                # entry out. The API request schema validates that
+                # The RequestSpec stores scheduler_hints as key=list pairs
+                # so we need to check the type on the value and pull the
+                # single entry out. The API request schema validates that
                 # the 'group' hint is a single value.
                 if isinstance(group_hint, list):
                     group_hint = group_hint[0]
-
-                group = objects.InstanceGroup.get_by_hint(context, group_hint)
+                try:
+                    group = objects.InstanceGroup.get_by_hint(
+                        context, group_hint
+                    )
+                except exception.InstanceGroupNotFound:
+                    return
         else:
             # TODO(ganso): a call to DB can be saved by adding request_spec
             # to rpcapi payload of live_migration, pre_live_migration and
             # check_can_live_migrate_destination
             try:
                 group = objects.InstanceGroup.get_by_instance_uuid(
-                    context, instance.uuid)
+                    context, instance.uuid
+                )
             except exception.InstanceGroupNotFound:
                 return
 
