@@ -1,6 +1,14 @@
 CHANGES
 =======
 
+25.2.0
+------
+
+* CI: fix backport validator for new branch naming
+* Enable use of service user token with admin context
+* Use force=True for os-brick disconnect during delete
+* Remove deleted projects from flavor access list
+
 25.1.1
 ------
 
@@ -10,6 +18,7 @@ CHANGES
 * ignore deleted server groups in validation
 * add repoducer test for bug 1890244
 * Fix rescue volume-based instance
+* Handle InstanceInvalidState exception
 * Add a workaround to skip hypervisor version check on LM
 
 25.1.0
@@ -31,6 +40,7 @@ CHANGES
 * Handle "no RAM info was set" migration case
 * Avoid n-cond startup abort for keystone failures
 * Unify placement client singleton implementations
+* Remove mentions of removed scheduler filters
 * nova-live-migration tests not needed for Ironic
 * For evacuation, ignore if task\_state is not None
 * add regression test case for bug 1978983
@@ -50,6 +60,7 @@ CHANGES
 * Remove unavailable but not reported PCI devices at startup
 * Isolate PCI tracker unit tests
 * Fix segment-aware scheduling permissions error
+* Fix LM rollback w/o multi port bindings extension
 * Reproduce live migration rollback w/o multi port bindings error
 * [CI] Install dependencies for docs target
 * Fix pre\_live\_migration rollback
