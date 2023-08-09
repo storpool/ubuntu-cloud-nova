@@ -80,7 +80,7 @@ Last-Update: 2021-10-11
              </domain>""")
  
      def test_ConfigGuest_parse_devices(self):
-@@ -3402,7 +3408,7 @@
+@@ -3428,7 +3434,7 @@
          xml = obj.to_xml()
          self.assertXmlEqual(xml, """
              <controller type='scsi' index='0' model='virtio-scsi'>
@@ -91,7 +91,7 @@ Last-Update: 2021-10-11
      def test_config_guest_usb_host_controller(self):
 --- a/nova/tests/unit/virt/libvirt/test_driver.py
 +++ b/nova/tests/unit/virt/libvirt/test_driver.py
-@@ -763,7 +763,8 @@
+@@ -761,7 +761,8 @@
          <domain type='kvm'>
            <devices>
              <disk type='block' device='disk'>
@@ -101,7 +101,7 @@ Last-Update: 2021-10-11
                <source dev='{device_path}'/>
                <target bus='virtio' dev='vdb'/>
                <serial>58a84f6d-3f0c-4e19-a0af-eb657b790657</serial>
-@@ -9336,6 +9337,7 @@
+@@ -9365,6 +9366,7 @@
          mock_xml_with_disk = """<domain>
    <devices>
      <disk type='file'>
@@ -109,7 +109,7 @@ Last-Update: 2021-10-11
        <source file='/path/to/fake-volume'/>
        <target dev='vdc' bus='virtio'/>
      </disk>
-@@ -9373,6 +9375,7 @@
+@@ -9402,6 +9404,7 @@
  
                  mock_get_domain.assert_called_with(instance)
                  xml = """<disk type="file" device="disk">
@@ -117,7 +117,7 @@ Last-Update: 2021-10-11
                              <source file="/path/to/fake-volume"/>
                              <target bus="virtio" dev="vdc"/>
                          </disk>"""
-@@ -28412,6 +28415,7 @@
+@@ -28430,6 +28433,7 @@
                <os>
                  <type>hvm</type>
                </os>
@@ -202,7 +202,7 @@ Last-Update: 2021-10-11
  
          return controller
  
-@@ -2910,6 +2922,14 @@
+@@ -2923,6 +2935,14 @@
                  features.append(feat.format_dom())
              root.append(features)
  
@@ -217,7 +217,7 @@ Last-Update: 2021-10-11
      def _format_devices(self, root):
          if len(self.devices) == 0:
              return
-@@ -2961,6 +2981,8 @@
+@@ -2974,6 +2994,8 @@
          if self.cpu is not None:
              root.append(self.cpu.format_dom())
  
