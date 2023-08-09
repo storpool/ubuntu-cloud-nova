@@ -1,3 +1,27 @@
+nova (3:24.2.1-0ubuntu1~cloud1) focal-xena; urgency=medium
+
+  * SECURITY REGRESSION: Regressions in other projects (LP: #2020111)
+    - debian/patches/series: Do not apply CVE-2023-2088.patch until
+      patches are ready for all upstream OpenStack projects.
+    - CVE-2023-2088
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Thu, 18 May 2023 11:52:13 -0400
+
+nova (3:24.2.1-0ubuntu1~cloud0) focal-xena; urgency=medium
+
+  * New stable point release for OpenStack Xena (LP: #2019762).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Mon, 15 May 2023 16:55:42 -0400
+
+nova (3:24.2.0-0ubuntu1~cloud1) focal-xena; urgency=medium
+
+  * SECURITY UPDATE: Unauthorized File Access
+    - debian/patches/CVE-2023-2088.patch: Use force=True for os-brick
+      disconnect during delete.
+    - CVE-2023-2088
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Thu, 04 May 2023 16:38:34 +0200
+
 nova (3:24.2.0-0ubuntu1~cloud0) focal-xena; urgency=medium
 
   * New stable point release for OpenStack Xena (LP: #2004032).

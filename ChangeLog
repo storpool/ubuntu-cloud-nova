@@ -1,12 +1,22 @@
 CHANGES
 =======
 
+24.2.1
+------
+
+* Handle mdev devices in libvirt 7.7+
+* Reproducer for bug 1951656
+* Add debug log for scheduler weight calculation
+* db: Resolve additional SAWarning warnings
+
 24.2.0
 ------
 
 * Gracefully ERROR in \_init\_instance if vnic\_type changed
 * Reproduce bug 1981813 in func env
 * [stable-only][cve] Check VMDK create-type against an allowed list
+* Improving logging at '\_allocate\_mdevs'
+* nova-live-migration tests not needed for Ironic
 * enable blocked VDPA move operations
 * Add compute restart capability for libvirt func tests
 * Remove double mocking... again
@@ -27,6 +37,7 @@ CHANGES
 
 * Add missing condition
 * Add service version check workaround for FFU
+* Accept both 1 and Y as AMD SEV KVM kernel param value
 * Fix instance's image\_ref lost on failed unshelving
 * Reproducer unit test for bug 1934094
 * neutron: Unbind remaining ports after PortNotFound

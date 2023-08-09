@@ -46,6 +46,7 @@ from oslo_log import log as logging
 from oslo_serialization import jsonutils
 from oslo_utils import excutils
 from oslo_utils import importutils
+from oslo_utils import strutils
 from oslo_utils import units
 from oslo_utils import versionutils
 
@@ -1416,7 +1417,7 @@ class Host(object):
     def list_mediated_devices(self, flags=0):
         """Lookup mediated devices.
 
-        :returns: a list of virNodeDevice instance
+        :returns: a list of strings with the name of the instance
         """
         return self._list_devices("mdev", flags=flags)
 
@@ -1585,9 +1586,9 @@ class Host(object):
             return False
 
         with open(SEV_KERNEL_PARAM_FILE) as f:
-            contents = f.read()
-            LOG.debug("%s contains [%s]", SEV_KERNEL_PARAM_FILE, contents)
-            return contents == "1\n"
+            content = f.read()
+            LOG.debug("%s contains [%s]", SEV_KERNEL_PARAM_FILE, content)
+            return strutils.bool_from_string(content)
 
     @property
     def supports_amd_sev(self) -> bool:

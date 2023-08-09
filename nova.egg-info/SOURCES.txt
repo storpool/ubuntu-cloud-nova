@@ -2685,6 +2685,7 @@ nova/tests/functional/regressions/test_bug_1937375.py
 nova/tests/functional/regressions/test_bug_1938326.py
 nova/tests/functional/regressions/test_bug_1939545.py
 nova/tests/functional/regressions/test_bug_1944619.py
+nova/tests/functional/regressions/test_bug_1951656.py
 nova/tests/functional/regressions/test_bug_1978983.py
 nova/tests/functional/wsgi/__init__.py
 nova/tests/functional/wsgi/test_flavor_manage.py
