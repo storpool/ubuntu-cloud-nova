@@ -1037,6 +1037,7 @@ doc/source/admin/configuration/index.rst
 doc/source/admin/configuration/iscsi-offload.rst
 doc/source/admin/configuration/logs.rst
 doc/source/admin/configuration/resize.rst
+doc/source/admin/configuration/service-user-token.rst
 doc/source/admin/configuration/samples/api-paste.ini.rst
 doc/source/admin/configuration/samples/index.rst
 doc/source/admin/configuration/samples/policy.yaml.rst
@@ -4221,6 +4222,7 @@ releasenotes/notes/send-notification-when-instance-tag-changes-67c08000b6e0cd2a.
 releasenotes/notes/separate-update-and-swap-volume-policy-for-attachment-e4c20d4907a52fa7.yaml
 releasenotes/notes/server_migrations-30519b35d3ea6763.yaml
 releasenotes/notes/service-status-notification-e137297f5d5aa45d.yaml
+releasenotes/notes/service-user-token-421d067c16257782.yaml
 releasenotes/notes/service-uuid-online-migration-17d48f198a6d4deb.yaml
 releasenotes/notes/set-endpoint-interface-for-ironicclient-a0b6b8f8dedc7341.yaml
 releasenotes/notes/set_guest_time-736939fe725cbdab.yaml
