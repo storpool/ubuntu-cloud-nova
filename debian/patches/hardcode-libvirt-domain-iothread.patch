@@ -339,7 +339,7 @@ Last-Update: 2022-06-02
          self._format_idmaps(root)
 --- a/nova/virt/libvirt/driver.py
 +++ b/nova/virt/libvirt/driver.py
-@@ -5519,6 +5519,7 @@
+@@ -5520,6 +5520,7 @@
              scsi_controller.type = 'scsi'
              scsi_controller.model = hw_scsi_model
              scsi_controller.index = 0
@@ -347,7 +347,7 @@ Last-Update: 2022-06-02
              return scsi_controller
  
      def _get_host_sysinfo_serial_hardware(self):
-@@ -6882,6 +6883,9 @@
+@@ -6883,6 +6884,9 @@
          instance.vcpu_model = self._cpu_config_to_vcpu_model(
              guest.cpu, instance.vcpu_model)
  
