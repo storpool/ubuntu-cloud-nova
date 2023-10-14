@@ -1,10 +1,17 @@
 CHANGES
 =======
 
+25.2.1
+------
+
+* enable validations in nova-lvm
+* Fix get\_segments\_id with subnets without segment\_id
+
 25.2.0
 ------
 
 * CI: fix backport validator for new branch naming
+* Have host look for CPU controller of cgroupsv2 location
 * Enable use of service user token with admin context
 * Use force=True for os-brick disconnect during delete
 * Remove deleted projects from flavor access list
@@ -28,6 +35,7 @@ CHANGES
 * Improving logging at '\_allocate\_mdevs'
 * Gracefully ERROR in \_init\_instance if vnic\_type changed
 * Reproduce bug 1981813 in func env
+* Ironic: retry when node not available
 * Adapt websocketproxy tests for SimpleHTTPServer fix
 * enable blocked VDPA move operations
 * Add compute restart capability for libvirt func tests
@@ -42,6 +50,9 @@ CHANGES
 * Unify placement client singleton implementations
 * Remove mentions of removed scheduler filters
 * nova-live-migration tests not needed for Ironic
+* Add reno for fixing bug 1941005
+* Update RequestSpec.pci\_request for resize
+* Reproducer for bug 1983753
 * For evacuation, ignore if task\_state is not None
 * add regression test case for bug 1978983
 * Retry attachment delete API call for 504 Gateway Timeout

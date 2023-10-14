@@ -1,8 +1,14 @@
-nova (3:25.2.0-0ubuntu1~cloud0) focal-yoga; urgency=medium
+nova (3:25.2.1-0ubuntu1~cloud0) focal-yoga; urgency=medium
 
   * New upstream release for the Ubuntu Cloud Archive.
 
- -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Sat, 01 Jul 2023 05:49:43 +0000
+ -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Sat, 14 Oct 2023 12:00:47 +0000
+
+nova (3:25.2.1-0ubuntu1) jammy; urgency=medium
+
+  * New stable point release for OpenStack Yoga (LP: #2037332).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Mon, 25 Sep 2023 16:54:47 -0400
 
 nova (3:25.2.0-0ubuntu1) jammy; urgency=medium
 
