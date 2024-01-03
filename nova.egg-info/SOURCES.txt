@@ -2695,6 +2695,7 @@ nova/tests/functional/regressions/test_bug_1943431.py
 nova/tests/functional/regressions/test_bug_1944619.py
 nova/tests/functional/regressions/test_bug_1951656.py
 nova/tests/functional/regressions/test_bug_1978983.py
+nova/tests/functional/regressions/test_bug_1983753.py
 nova/tests/functional/wsgi/__init__.py
 nova/tests/functional/wsgi/test_flavor_manage.py
 nova/tests/functional/wsgi/test_interfaces.py
@@ -3650,6 +3651,7 @@ releasenotes/notes/bug-1970383-segment-scheduling-permissions-92ba907b10a9eb1c.y
 releasenotes/notes/bug-1978444-db46df5f3d5ea19e.yaml
 releasenotes/notes/bug-1981813-vnic-type-change-9f3e16fae885b57f.yaml
 releasenotes/notes/bug-1982284-libvirt-handle-no-ram-info-was-set-99784934ed80fd72.yaml
+releasenotes/notes/bug-1983753-update-requestspec-pci_request-for-resize-a3c6b0a979db723f.yaml
 releasenotes/notes/bug-hyperv-1629040-e1eb35a7b31d9af8.yaml
 releasenotes/notes/bug-retry-corrupted-download-5798b0df44a00e4e.yaml
 releasenotes/notes/bug-volume-attach-policy-1635358-671ce4d4ee8c211b.yaml
