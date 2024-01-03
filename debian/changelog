@@ -1,3 +1,10 @@
+nova (3:25.2.1-0ubuntu1~cloud0+0~0~0.sp1) focal-yoga; urgency=medium
+
+  * Non-maintainer upload for patch tracking only.
+  * Merge the StorPool changes.
+
+ -- Peter Pentchev <pp@storpool.com>  Wed, 03 Jan 2024 11:28:02 +0200
+
 nova (3:25.2.1-0ubuntu1~cloud0) focal-yoga; urgency=medium
 
   * New upstream release for the Ubuntu Cloud Archive.
