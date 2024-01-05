@@ -1,3 +1,10 @@
+nova (3:25.2.1-0ubuntu1+0~0~0.sp1) jammy-yoga; urgency=medium
+
+  * Non-maintainer upload for patch tracking only.
+  * Add the StorPool patch for adding iothreads to the libvirt configuration.
+
+ -- Peter Pentchev <pp@storpool.com>  Fri, 05 Jan 2024 17:17:14 +0200
+
 nova (3:25.2.1-0ubuntu1) jammy; urgency=medium
 
   * New stable point release for OpenStack Yoga (LP: #2037332).
